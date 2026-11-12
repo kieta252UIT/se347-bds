@@ -1,16 +1,30 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
+import type { ApiErrorResponse } from "../types/api";
+import { useAuthStore } from "../stores/useAuthStore";
+
+export const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
+export const AUTH_BASE_URL = import.meta.env.VITE_AUTH_URL || "/auth";
 
 const api = axios.create({
-  baseURL: "http://localhost:8080/api",
+  baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
   },
-  withCredentials: true,
   xsrfCookieName: "XSRF-TOKEN",
   xsrfHeaderName: "X-XSRF-TOKEN",
 });
 
-// Request Interceptor: Chuẩn bị header nếu cần
+export const authApi = axios.create({
+  baseURL: AUTH_BASE_URL,
+  withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+  },
+  xsrfCookieName: "XSRF-TOKEN",
+  xsrfHeaderName: "X-XSRF-TOKEN",
+});
+
 api.interceptors.request.use(
   (config) => {
     return config;
@@ -20,7 +34,6 @@ api.interceptors.request.use(
   }
 );
 
-// Response Interceptor: Xử lý tập trung mã lỗi HTTP và chuẩn hóa dữ liệu lỗi
 api.interceptors.response.use(
   (response) => {
     return response;
@@ -37,7 +50,6 @@ api.interceptors.response.use(
       timestamp: responseData?.timestamp || new Date().toISOString(),
     };
 
-    // Khi nhận 401: phiên không hợp lệ hoặc đã bị thu hồi
     if (status === 401) {
       const { isAuthenticated, clearAuth } = useAuthStore.getState();
       if (isAuthenticated) {
