@@ -35,6 +35,9 @@ supabase/.temp/
 .env
 .env.local
 .env.*.local
+*.pem
+*.key
+proxy/certs/
 
 # ==========================================
 # Logs
