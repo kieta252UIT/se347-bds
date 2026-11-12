@@ -1,3 +1,18 @@
 spring:
   application:
     name: backend
+
+server:
+  port: ${PORT:8080}
+  # Trust proxy: Tin cậy các header X-Forwarded-Proto, X-Forwarded-For từ Nginx Reverse Proxy
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        name: SESSION
+        http-only: true
+        secure: ${COOKIE_SECURE:true}
+        same-site: lax
+        path: /
+
+
