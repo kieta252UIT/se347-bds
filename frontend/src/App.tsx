@@ -1,25 +1,15 @@
-import { useEffect, useState } from "react";
-import api from "./services/api";
+import { useEffect } from "react";
+import { RouterProvider } from "react-router";
+import { router } from "@/routes";
+import { useAuthStore } from "@/stores/useAuthStore";
 
-function App() {
-  const [message, setMessage] = useState("Connecting...");
+export default function App() {
+  const checkSession = useAuthStore((state) => state.checkSession);
 
   useEffect(() => {
-    api.get("/hello")
-      .then((response) => {
-        setMessage(response.data);
-      })
-      .catch(() => {
-        setMessage("Cannot connect to backend!");
-      });
-  }, []);
+    // Khôi phục phiên làm việc khi người dùng mở lại hoặc reload trình duyệt (SDD-09)
+    checkSession();
+  }, [checkSession]);
 
-  return (
-    <div>
-      <h1>Find & Recommend Real Estate</h1>
-      <p>{message}</p>
-    </div>
-  );
+  return <RouterProvider router={router} />;
 }
-
-export default App;
