@@ -15,13 +15,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Chi chuyen tiep /api sang Spring Boot Backend (cung nguon /api/*).
+      // Cac route /auth/verify-email va /auth/reset-password thuoc ve React SPA.
       '/api': {
         target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/auth': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
+        changeOrigin: false,
+        xfwd: true,
       },
     },
   },
