@@ -1,0 +1,45 @@
+# Cấu hình Caddy HTTPS Reverse Proxy cùng nguồn (Same-Origin) theo SDD-11, SDD-28 & ADR-0013
+# Chạy lệnh từ thư mục proxy/: caddy run --config Caddyfile
+
+https://localhost {
+	# Sử dụng CA nội bộ của Caddy cho môi trường phát triển/demo local
+	# (Hoặc thay bằng: tls certs/localhost.pem certs/localhost-key.pem nếu dùng chứng chỉ mkcert)
+	tls internal
+
+	# Định tuyến toàn bộ /api và /api/* tới Spring Boot Backend (cổng 8080)
+	# Không fallback /api/* sang index.html của React (ADR-0013, TS1-004)
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:8080 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-Port {server_port}
+		}
+	}
+
+	# Định tuyến toàn bộ giao diện và SPA deep links (bao gồm /auth/verify-email, /auth/reset-password)
+	# tới React/Vite Frontend (cổng 5173)
+	handle {
+		reverse_proxy 127.0.0.1:5173 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Khi Backend chưa chạy hoặc lỗi kết nối trên nhánh /api/*, trả JSON chuẩn LoiApi (503 TAM_GIAN_DOAN)
+	handle_errors {
+		@api_error {
+			path /api /api/*
+			expression `{err.status_code} in [502, 503, 504]`
+		}
+		handle @api_error {
+			header Content-Type "application/json; charset=utf-8"
+			header Cache-Control "no-store"
+			header Vary "Cookie"
+			respond `{"maLoi":"TAM_GIAN_DOAN","thongDiep":"Dịch vụ API tạm thời gián đoạn. Vui lòng thử lại sau.","truongLoi":[],"traceId":"caddy-upstream-503"}` 503
+		}
+	}
+}

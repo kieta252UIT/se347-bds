@@ -6,6 +6,8 @@ import com.realestates.backend.auth.dto.LoiApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * Bộ xử lý ngoại lệ tập trung cho luồng đăng ký Auth, chuẩn hóa phản hồi theo schema LoiApi
  * (api-specification-sprint-1.md §3.4 & §8.9).
  */
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = AuthRegistrationController.class)
 public class AuthExceptionHandler {
 
