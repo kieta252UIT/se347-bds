@@ -1,0 +1,80 @@
+{
+  "groups": [
+    {
+      "name": "supabase",
+      "type": "com.realestates.backend.auth.infrastructure.SupabaseAuthProperties",
+      "sourceType": "com.realestates.backend.auth.infrastructure.SupabaseAuthProperties"
+    },
+    {
+      "name": "app.security",
+      "type": "com.realestates.backend.config.AuthSessionCookieConfig",
+      "sourceType": "com.realestates.backend.config.AuthSessionCookieConfig"
+    }
+  ],
+  "properties": [
+    {
+      "name": "supabase.url",
+      "type": "java.lang.String",
+      "sourceType": "com.realestates.backend.auth.infrastructure.SupabaseAuthProperties",
+      "description": "URL của project Supabase."
+    },
+    {
+      "name": "supabase.anon-key",
+      "type": "java.lang.String",
+      "sourceType": "com.realestates.backend.auth.infrastructure.SupabaseAuthProperties",
+      "description": "Publishable / Anon key của Supabase."
+    },
+    {
+      "name": "supabase.service-role-key",
+      "type": "java.lang.String",
+      "sourceType": "com.realestates.backend.auth.infrastructure.SupabaseAuthProperties",
+      "description": "Secret / Service Role key của Supabase dùng phía server."
+    },
+    {
+      "name": "supabase.jwt-secret",
+      "type": "java.lang.String",
+      "sourceType": "com.realestates.backend.auth.infrastructure.SupabaseAuthProperties",
+      "description": "Legacy JWT Secret của Supabase."
+    },
+    {
+      "name": "supabase.auth-connect-timeout-ms",
+      "type": "java.lang.Integer",
+      "sourceType": "com.realestates.backend.auth.infrastructure.SupabaseAuthProperties",
+      "description": "Thời gian chờ kết nối tới Supabase Auth (ms).",
+      "defaultValue": 3000
+    },
+    {
+      "name": "supabase.auth-read-timeout-ms",
+      "type": "java.lang.Integer",
+      "sourceType": "com.realestates.backend.auth.infrastructure.SupabaseAuthProperties",
+      "description": "Thời gian chờ đọc phản hồi từ Supabase Auth (ms).",
+      "defaultValue": 10000
+    },
+    {
+      "name": "app.security.allowed-origins",
+      "type": "java.lang.String",
+      "description": "Danh sách origin được phép gọi API qua CORS."
+    },
+    {
+      "name": "app.security.cookie-secure",
+      "type": "java.lang.Boolean",
+      "description": "Cờ Secure cho cookie phiên và CSRF."
+    },
+    {
+      "name": "app.security.session-cookie-name",
+      "type": "java.lang.String",
+      "description": "Tên cookie phiên xác thực."
+    },
+    {
+      "name": "app.security.session-max-age-seconds",
+      "type": "java.lang.Long",
+      "description": "Thời gian sống tối đa của cookie phiên (giây)."
+    },
+    {
+      "name": "app.security.csrf-cookie-name",
+      "type": "java.lang.String",
+      "description": "Tên cookie CSRF."
+    }
+  ],
+  "hints": []
+}

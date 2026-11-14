@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.realestates.backend.config.AuthSessionCookieConfig;
+import com.realestates.backend.database.TestDatabaseSettings;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,12 +18,15 @@ import com.realestates.backend.common.AbstractPostgresIntegrationTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.filter.ForwardedHeaderFilter;
 
-class HttpsSameOriginAndApiRoutingTests extends AbstractPostgresIntegrationTest {
+@SpringBootTest
+@ContextConfiguration(initializers = TestDatabaseSettings.SpringInitializer.class)
+class HttpsSameOriginAndApiRoutingTests {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
