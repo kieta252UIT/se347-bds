@@ -1,39 +1,18 @@
 spring:
   application:
     name: backend
-  web:
-    resources:
-      add-mappings: false
 
 server:
   port: ${PORT:8080}
-  # Tin cay header X-Forwarded-Proto, X-Forwarded-For, X-Forwarded-Host tu Nginx/Caddy Reverse Proxy
+  # Trust proxy: Tin cậy các header X-Forwarded-Proto, X-Forwarded-For từ Nginx Reverse Proxy
   forward-headers-strategy: framework
-  error:
-    whitelabel:
-      enabled: false
   servlet:
     session:
       cookie:
-        name: ${SESSION_COOKIE_NAME:__Host-se214_session}
+        name: SESSION
         http-only: true
         secure: ${COOKIE_SECURE:true}
         same-site: lax
         path: /
-        max-age: ${SESSION_MAX_AGE_SECONDS:31536000}
 
-app:
-  security:
-    allowed-origins: ${FRONTEND_ORIGIN:https://localhost,http://localhost:5173}
-    cookie-secure: ${COOKIE_SECURE:true}
-    session-cookie-name: ${SESSION_COOKIE_NAME:__Host-se214_session}
-    session-max-age-seconds: ${SESSION_MAX_AGE_SECONDS:31536000}
-    csrf-cookie-name: ${CSRF_COOKIE_NAME:__Host-se214_csrf}
 
-supabase:
-  url: ${SUPABASE_URL:}
-  anon-key: ${SUPABASE_ANON_KEY:}
-  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
-  jwt-secret: ${SUPABASE_JWT_SECRET:}
-  auth-connect-timeout-ms: ${SUPABASE_AUTH_CONNECT_TIMEOUT_MS:3000}
-  auth-read-timeout-ms: ${SUPABASE_AUTH_READ_TIMEOUT_MS:10000}
