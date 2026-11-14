@@ -29,3 +29,11 @@ app:
     session-cookie-name: ${SESSION_COOKIE_NAME:__Host-se214_session}
     session-max-age-seconds: ${SESSION_MAX_AGE_SECONDS:31536000}
     csrf-cookie-name: ${CSRF_COOKIE_NAME:__Host-se214_csrf}
+
+supabase:
+  url: ${SUPABASE_URL:}
+  anon-key: ${SUPABASE_ANON_KEY:}
+  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+  jwt-secret: ${SUPABASE_JWT_SECRET:}
+  auth-connect-timeout-ms: ${SUPABASE_AUTH_CONNECT_TIMEOUT_MS:3000}
+  auth-read-timeout-ms: ${SUPABASE_AUTH_READ_TIMEOUT_MS:10000}
