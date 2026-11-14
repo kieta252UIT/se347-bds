@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.realestates.backend.database.TestDatabaseSettings;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import com.realestates.backend.common.AbstractPostgresIntegrationTest;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
@@ -29,7 +30,8 @@ import org.springframework.web.filter.ForwardedHeaderFilter;
  * - Header bảo mật chống rò rỉ bộ nhớ đệm (Cache-Control: no-store).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class ApiContractAndSecurityTest extends AbstractPostgresIntegrationTest {
+@ContextConfiguration(initializers = TestDatabaseSettings.SpringInitializer.class)
+class ApiContractAndSecurityTest {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
