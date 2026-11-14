@@ -13,7 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import com.realestates.backend.common.AbstractPostgresIntegrationTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
@@ -22,8 +22,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.filter.ForwardedHeaderFilter;
 
-@SpringBootTest
-class HttpsSameOriginAndApiRoutingTests {
+class HttpsSameOriginAndApiRoutingTests extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
