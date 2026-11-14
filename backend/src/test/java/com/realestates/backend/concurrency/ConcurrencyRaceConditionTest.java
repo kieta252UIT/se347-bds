@@ -41,7 +41,7 @@ class ConcurrencyRaceConditionTest {
                 "INSERT INTO se214.tai_khoan (id, supabase_auth_user_id, email, ho_ten) " +
                 "VALUES (?, ?, ?, 'User Race Test')",
                 userId,
-                "sb_auth_" + UUID.randomUUID(),
+                UUID.randomUUID(),
                 "user_race_" + UUID.randomUUID() + "@bds-test.local"
         );
 

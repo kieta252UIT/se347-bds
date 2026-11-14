@@ -51,7 +51,7 @@ class PostgresDatabaseIntegrationTest {
                 "INSERT INTO se214.tai_khoan (id, supabase_auth_user_id, email, ho_ten, so_dien_thoai, vai_tro, trang_thai) " +
                 "VALUES (?, ?, ?, ?, ?, 'nguoi_dung', 'hoat_dong')",
                 userId,
-                "sb_auth_" + UUID.randomUUID(),
+                UUID.randomUUID(),
                 email,
                 "Nguyễn Văn A",
                 "0901234567"
@@ -75,7 +75,7 @@ class PostgresDatabaseIntegrationTest {
                 "INSERT INTO se214.tai_khoan (id, supabase_auth_user_id, email, ho_ten) " +
                 "VALUES (?, ?, ?, 'Người Dùng Test Hạn Mức')",
                 userId,
-                "sb_auth_" + UUID.randomUUID(),
+                UUID.randomUUID(),
                 "user_limit_" + userId + "@bds-test.local"
         );
 
@@ -102,7 +102,7 @@ class PostgresDatabaseIntegrationTest {
                 "INSERT INTO se214.tai_khoan (id, supabase_auth_user_id, email, ho_ten) " +
                 "VALUES (?, ?, ?, 'User 1')",
                 UUID.randomUUID(),
-                "sb_auth_" + UUID.randomUUID(),
+                UUID.randomUUID(),
                 duplicateEmail
         );
 
@@ -110,7 +110,7 @@ class PostgresDatabaseIntegrationTest {
                 "INSERT INTO se214.tai_khoan (id, supabase_auth_user_id, email, ho_ten) " +
                 "VALUES (?, ?, ?, 'User 2')",
                 UUID.randomUUID(),
-                "sb_auth_" + UUID.randomUUID(),
+                UUID.randomUUID(),
                 duplicateEmail
         )).isInstanceOf(DataIntegrityViolationException.class);
     }
