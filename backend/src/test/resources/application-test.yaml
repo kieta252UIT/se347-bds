@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: backend-test
+  datasource:
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    clean-disabled: false
+
+server:
+  port: 0
+
+app:
+  security:
+    allowed-origins: https://localhost,http://localhost:5173
+    cookie-secure: true
+    session-cookie-name: __Host-se214_session
+    session-max-age-seconds: 31536000
+    csrf-cookie-name: __Host-se214_csrf
