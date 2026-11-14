@@ -206,6 +206,8 @@ Máy chủ Vite sẽ khởi động tại địa chỉ: **http://localhost:5173*
 
 ### Terminal 2 — Chạy Máy Chủ Backend (Spring Boot)
 
+Chuẩn bị PostgreSQL và các biến `DB_*`/`FLYWAY_DB_*` theo [runbook database](docs/database/README.md) trước khi chạy. Spring Boot không tự đọc `.env`. Migration không thay việc tích hợp repository JPA vào luồng đăng ký hiện có.
+
 **Trên Windows (PowerShell hoặc CMD):**
 ```cmd
 cd backend
@@ -314,7 +316,7 @@ Dự án áp dụng cấu trúc phân tầng chuẩn của Spring Boot:
 | Lệnh trên Windows | Lệnh trên Linux / macOS | Mô tả |
 |---|---|---|
 | `.\mvnw.cmd compile` | `./mvnw compile` | Biên dịch mã nguồn Java |
-| `.\mvnw.cmd test` | `./mvnw test` | Chạy toàn bộ Unit Tests |
+| `.\mvnw.cmd test` | `./mvnw test` | Chạy unit/API và migration tests; cần PostgreSQL test riêng cùng `DB_TEST_*` |
 | `.\mvnw.cmd package` | `./mvnw package` | Đóng gói ứng dụng thành file JAR |
 | `.\mvnw.cmd verify` | `./mvnw verify` | Chạy test và thẩm định chất lượng dự án |
 | `.\mvnw.cmd clean package` | `./mvnw clean package` | Dọn dẹp thư mục build cũ và đóng gói lại từ đầu |
@@ -357,11 +359,11 @@ Ví dụ — Thêm PostgreSQL driver khi kết nối cơ sở dữ liệu:
 
 ### Mục Đích Của Thư Mục `supabase/`
 
-Thư mục `supabase/` trong dự án dùng để lưu trữ cấu hình môi trường local và **các file SQL migration được theo dõi qua Git**. Điều này đảm bảo tất cả thành viên trong nhóm đều có cấu trúc cơ sở dữ liệu đồng bộ với nhau.
+Thư mục `supabase/` lưu cấu hình dịch vụ Supabase local. Schema ứng dụng `se214` được quản lý bằng **Flyway** trong `backend/src/main/resources/db/migration/`; Supabase CLI không chạy migration/seed ứng dụng.
 
 ### Database Migration Là Gì?
 
-Migration là một file kịch bản SQL thể hiện một thay đổi cụ thể trên cấu trúc bảng (ví dụ: tạo bảng mới, thêm cột, tạo index, thiết lập khóa ngoại). Các file migration được đánh số thứ tự theo timestamp và được thực thi tuần tự.
+Migration là một file kịch bản SQL thể hiện một thay đổi cụ thể trên cấu trúc bảng (ví dụ: tạo bảng mới, thêm cột, tạo index, thiết lập khóa ngoại). Các file Flyway được đánh số phiên bản (`V1__...sql`, `V2__...sql`) và chạy tuần tự; checksum được lưu trong `se214.flyway_schema_history`.
 
 ### Phân Biệt Giữa Schema (Cấu Trúc) Và Data (Dữ Liệu)
 
@@ -374,9 +376,9 @@ File migration chỉ lưu giữ **Schema** (khung bảng), không bảo toàn **
 
 ### Nơi Quản Lý Cấu Trúc Database
 
-Mọi thay đổi cấu trúc bảng, trigger, function hay chính sách phân quyền RLS phải được viết trong các file migration nằm ở thư mục `supabase/migrations/`.
+Mọi thay đổi schema ứng dụng nằm trong `backend/src/main/resources/db/migration/`. V1 tạo 12 bảng Sprint 1; Flyway quản lý transaction và schema `se214`. Hibernate chỉ `validate`, không tự tạo/sửa bảng. Sau khi V1 đã được áp dụng, thay đổi tiếp theo phải dùng V2 trở đi.
 
-Xem hướng dẫn chi tiết về cách tạo file migration, quy ước đặt tên và cách phối hợp làm việc tại **[Supabase README](supabase/README.md)**.
+Xem **[hướng dẫn Flyway và kiểm thử PostgreSQL](docs/database/README.md)** và **[phân quyền migrator/runtime](backend/scripts/database/README.md)**. Cấu hình dịch vụ local tại [Supabase README](supabase/README.md).
 
 > **Quan trọng:** Hiện tại nhóm **chưa** tạo dự án Supabase trên đám mây (Supabase Cloud). Thư mục `supabase/` này hiện phục vụ chuẩn hóa quy trình cấu hình và migration local trước. Việc kết nối tới Supabase Cloud sẽ được thực hiện ở các bước tiếp theo.
 
@@ -446,7 +448,7 @@ Các file tự sinh hoặc chứa thông tin nhạy cảm đã được cấu h�
 | `backend/mvnw`, `backend/mvnw.cmd` | Bộ chạy Maven Wrapper đảm bảo môi trường build đồng nhất |
 | `backend/.mvn/wrapper/maven-wrapper.properties` | Khai báo URL và phiên bản Maven tương thích |
 | `supabase/config.toml` | Cấu hình chung cho môi trường database Supabase |
-| `supabase/migrations/*.sql` | Lịch sử các bước thay đổi cấu trúc bảng database |
+| `backend/src/main/resources/db/migration/V*.sql` | Lịch sử Flyway của schema ứng dụng |
 
 > **Lưu ý:** Hiện tại dự án đang **thiếu file `.gitignore` ở thư mục gốc**. Nhóm cần tạo file này (xem mẫu ở phần tiếp theo) để tránh vô tình commit nhầm `node_modules/` của thư mục gốc lên GitHub.
 
@@ -471,10 +473,12 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 
 Ví dụ file `backend/.env.example`:
 ```
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:54322/postgres
-SPRING_DATASOURCE_USERNAME=postgres
-SPRING_DATASOURCE_PASSWORD=your-secret-password-here
-SUPABASE_JWT_SECRET=your-jwt-secret-key-here
+DB_URL=jdbc:postgresql://localhost:54322/postgres
+DB_USERNAME=se214_runtime
+DB_PASSWORD=<mat-khau-runtime>
+FLYWAY_DB_URL=jdbc:postgresql://localhost:54322/postgres
+FLYWAY_DB_USERNAME=se214_migrator
+FLYWAY_DB_PASSWORD=<mat-khau-migrator>
 ```
 
 ### Nội Dung File `.gitignore` Khuyên Dùng Cho Thư Mục Gốc
@@ -532,7 +536,7 @@ Mỗi workflow áp dụng bộ lọc đường dẫn (`paths:`) để tránh lã
 | `backend/pom.xml` | Bỏ qua ⏭️ | Chạy ✅ |
 | Thay đổi cả thư mục frontend và backend | Chạy ✅ | Chạy ✅ |
 | Chỉ sửa `README.md` | Bỏ qua ⏭️ | Bỏ qua ⏭️ |
-| Sửa migration trong `supabase/migrations/...` | Bỏ qua ⏭️ | Bỏ qua ⏭️ |
+| Sửa migration trong `backend/src/main/resources/db/migration/...` | Bỏ qua ⏭️ | Chạy ✅ |
 
 Ngoài ra, khi có sửa đổi trực tiếp vào chính file workflow CI (ví dụ: sửa file `frontend-ci.yml`), workflow đó cũng sẽ được kích hoạt để kiểm tra tính hợp lệ.
 
@@ -547,7 +551,8 @@ Ngoài ra, khi có sửa đổi trực tiếp vào chính file workflow CI (ví 
 **Backend CI:**
 1. Khởi tạo môi trường Java JDK 21 (Temurin) có sẵn bộ nhớ đệm Maven cache.
 2. Cấp quyền thực thi cho script Maven Wrapper (`chmod +x mvnw`).
-3. Chạy toàn bộ test tự động và biên dịch ứng dụng (`./mvnw --batch-mode verify`).
+3. Khởi tạo PostgreSQL 17 riêng cho CI, cấp `DB_TEST_*` và quyền reset schema test; chạy toàn bộ test và đóng gói (`./mvnw --batch-mode verify`).
+4. Lưu báo cáo Surefire để xem kết quả các ca migration và backend.
 
 ### Xử Lý Khi CI Bị Báo Lỗi (Đánh Dấu ✗ Đỏ)
 

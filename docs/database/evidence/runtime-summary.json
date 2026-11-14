@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-14",
+  "packaged_jar": true,
+  "database_user": "se214_runtime",
+  "flyway_enabled": false,
+  "health": {
+    "groups": [
+      "liveness",
+      "readiness"
+    ],
+    "status": "UP"
+  },
+  "api_hello_status": 200,
+  "postgresql": "17.11 disposable local database"
+}

@@ -1,0 +1,114 @@
+{
+  "date": "2026-11-14",
+  "database": "PostgreSQL 17.11 disposable se214_permissions_test",
+  "script_reruns": "success",
+  "allowed_checks": 7,
+  "denied_checks": 14,
+  "results": [
+    {
+      "check": "read_accounts",
+      "expected": "allowed",
+      "passed": true
+    },
+    {
+      "check": "read_sessions",
+      "expected": "allowed",
+      "passed": true
+    },
+    {
+      "check": "read_listing_versions",
+      "expected": "allowed",
+      "passed": true
+    },
+    {
+      "check": "insert_account",
+      "expected": "allowed",
+      "passed": true
+    },
+    {
+      "check": "update_quota",
+      "expected": "allowed",
+      "passed": true
+    },
+    {
+      "check": "remove_favorite",
+      "expected": "allowed",
+      "passed": true
+    },
+    {
+      "check": "cleanup_image",
+      "expected": "allowed",
+      "passed": true
+    },
+    {
+      "check": "create_schema",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "create_table",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "alter_table",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "truncate",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "read_flyway",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "delete_flyway",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "delete_account",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "delete_listing",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "update_audit",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "delete_audit",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "delete_idempotency",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "update_package_event",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "insert_package",
+      "expected": "denied",
+      "passed": true
+    },
+    {
+      "check": "update_favorite",
+      "expected": "denied",
+      "passed": true
+    }
+  ]
+}
