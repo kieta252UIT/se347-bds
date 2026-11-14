@@ -82,6 +82,62 @@ public final class TaiKhoan {
         );
     }
 
+    /**
+     * Tạo tài khoản vai trò Người dùng đã được xác minh email trên Supabase Auth
+     * (dùng khi hoàn tất hồ sơ còn thiếu từ danh tính provider tin cậy theo api-specification §8.4).
+     */
+    public static TaiKhoan taoNguoiDungDaXacMinh(
+            UUID id,
+            UUID supabaseAuthUserId,
+            String normalizedEmail,
+            String normalizedHoTen,
+            String normalizedSoDienThoai,
+            Instant now
+    ) {
+        Instant timestamp = now != null ? now : Instant.now();
+        return new TaiKhoan(
+                id != null ? id : UUID.randomUUID(),
+                supabaseAuthUserId,
+                normalizedEmail,
+                normalizedHoTen,
+                normalizedSoDienThoai,
+                VaiTroTaiKhoan.vaiTroDangKyCongKhai(),
+                TrangThaiTaiKhoan.HOAT_DONG,
+                true,
+                0L,
+                "san_sang",
+                timestamp,
+                timestamp,
+                timestamp
+        );
+    }
+
+    /**
+     * Trả về bản sao thực thể TaiKhoan với trạng thái email_da_xac_minh = true (UC-26 / AC-15.2).
+     * Giữ nguyên vai trò, trạng thái khóa, mốc thu hồi và các thông tin hồ sơ.
+     */
+    public TaiKhoan danhDauEmailDaXacMinh(Instant now) {
+        Instant timestamp = now != null ? now : Instant.now();
+        if (this.emailDaXacMinh) {
+            return this;
+        }
+        return new TaiKhoan(
+                this.id,
+                this.supabaseAuthUserId,
+                this.email,
+                this.hoTen,
+                this.soDienThoai,
+                this.vaiTro,
+                this.trangThai,
+                true,
+                this.mocThuHoi,
+                this.trangThaiDongBoAuth,
+                timestamp,
+                this.taoLuc,
+                timestamp
+        );
+    }
+
     public UUID getId() {
         return id;
     }

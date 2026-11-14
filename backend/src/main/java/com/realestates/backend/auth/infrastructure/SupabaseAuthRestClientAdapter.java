@@ -2,10 +2,12 @@ package com.realestates.backend.auth.infrastructure;
 
 import com.realestates.backend.auth.application.SupabaseAuthPort;
 import com.realestates.backend.auth.application.SupabaseRegisteredUser;
+import com.realestates.backend.auth.application.SupabaseVerifiedIdentity;
 import com.realestates.backend.auth.domain.VaiTroTaiKhoan;
 import com.realestates.backend.auth.exception.AuthProviderUnavailableException;
 import com.realestates.backend.auth.exception.AuthRateLimitExceededException;
 import com.realestates.backend.auth.exception.EmailAlreadyExistsException;
+import com.realestates.backend.auth.exception.InvalidVerificationLinkException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -116,6 +118,101 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
         } catch (RestClientException ex) {
             throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
         }
+    }
+
+    @Override
+    public SupabaseVerifiedIdentity verifySignupEmailTokenHash(String tokenHash) {
+        // Cố định mục đích type = "signup" theo AUTH-15 & api-specification §8.5; tuyệt đối không dùng "email"
+        Map<String, Object> verifyBody = Map.of(
+                "type", "signup",
+                "token_hash", tokenHash
+        );
+        return executeSignupVerifyRequest(verifyBody);
+    }
+
+    @Override
+    public SupabaseVerifiedIdentity verifySignupEmailOtp(String normalizedEmail, String sixDigitOtp) {
+        if (isBlank(normalizedEmail)) {
+            return verifySignupEmailTokenHash(sixDigitOtp);
+        }
+        Map<String, Object> verifyBody = new LinkedHashMap<>();
+        verifyBody.put("type", "signup");
+        verifyBody.put("email", normalizedEmail.trim().toLowerCase(Locale.ROOT));
+        verifyBody.put("token", sixDigitOtp);
+        return executeSignupVerifyRequest(verifyBody);
+    }
+
+    private SupabaseVerifiedIdentity executeSignupVerifyRequest(Map<String, Object> verifyBody) {
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String apiKey = !isBlank(properties.getAnonKey())
+                ? properties.getAnonKey().trim()
+                : (!isBlank(properties.getServiceRoleKey()) ? properties.getServiceRoleKey().trim() : "");
+
+        if (baseUrl.isBlank() || apiKey.isBlank()) {
+            throw new AuthProviderUnavailableException();
+        }
+
+        Map<String, Object> response;
+        try {
+            response = restClient.post()
+                    .uri(baseUrl + "/auth/v1/verify")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .header("apikey", apiKey)
+                    .header("Authorization", "Bearer " + apiKey)
+                    .body(verifyBody)
+                    .retrieve()
+                    .body(MAP_TYPE);
+        } catch (RestClientResponseException ex) {
+            throw mapSupabaseVerifyHttpError(ex);
+        } catch (RestClientException ex) {
+            throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        }
+
+        SupabaseVerifiedIdentity verifiedIdentity = extractVerifiedIdentity(response);
+
+        // Nếu Supabase phát hành access_token tạm trong phản hồi verify, thu hồi ngay ở scope=local
+        // để callback không để lại phiên mở và tuyệt đối không trả token ra ngoài (api-specification §8.5)
+        String callbackAccessToken = extractAccessTokenIfPresent(response);
+        if (!isBlank(callbackAccessToken)) {
+            revokeCallbackSessionBestEffort(baseUrl, apiKey, callbackAccessToken.trim());
+        }
+
+        return verifiedIdentity;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public java.util.Optional<SupabaseVerifiedIdentity> findProviderUserByEmail(String normalizedEmail) {
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String serviceRoleKey = properties.getServiceRoleKey();
+        if (isBlank(normalizedEmail) || baseUrl.isBlank() || isBlank(serviceRoleKey)) {
+            return java.util.Optional.empty();
+        }
+        String targetEmail = normalizedEmail.trim().toLowerCase(Locale.ROOT);
+        try {
+            Map<String, Object> response = restClient.get()
+                    .uri(baseUrl + "/auth/v1/admin/users?page=1&per_page=100")
+                    .accept(MediaType.APPLICATION_JSON)
+                    .header("apikey", serviceRoleKey.trim())
+                    .header("Authorization", "Bearer " + serviceRoleKey.trim())
+                    .retrieve()
+                    .body(MAP_TYPE);
+            if (response != null && response.get("users") instanceof List<?> usersList) {
+                for (Object item : usersList) {
+                    if (item instanceof Map<?, ?> userMapRaw) {
+                        Map<String, Object> userMap = (Map<String, Object>) userMapRaw;
+                        if (userMap.get("email") instanceof String emailStr
+                                && targetEmail.equals(emailStr.trim().toLowerCase(Locale.ROOT))) {
+                            return java.util.Optional.of(extractVerifiedIdentity(userMap));
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // Nếu không tra cứu được danh sách admin thì trả empty
+        }
+        return java.util.Optional.empty();
     }
 
     @Override
@@ -236,6 +333,119 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
             }
         }
         throw new AuthProviderUnavailableException();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static SupabaseVerifiedIdentity extractVerifiedIdentity(Map<String, Object> response) {
+        if (response == null) {
+            throw new AuthProviderUnavailableException();
+        }
+        Map<String, Object> userObject = response;
+        if (response.get("user") instanceof Map<?, ?> nestedUser) {
+            userObject = (Map<String, Object>) nestedUser;
+        }
+
+        UUID supabaseUserId = extractSupabaseUserId(response);
+        String email = null;
+        if (userObject.get("email") instanceof String rawEmail && !rawEmail.isBlank()) {
+            email = rawEmail.trim().toLowerCase(Locale.ROOT);
+        } else if (response.get("email") instanceof String topEmail && !topEmail.isBlank()) {
+            email = topEmail.trim().toLowerCase(Locale.ROOT);
+        }
+        if (email == null || email.isBlank()) {
+            throw new AuthProviderUnavailableException("Phản hồi xác minh từ Supabase Auth thiếu email định danh.");
+        }
+
+        boolean emailConfirmed = isEmailConfirmedInPayload(userObject) || isEmailConfirmedInPayload(response);
+
+        String hoTen = null;
+        String soDienThoai = null;
+        Object rawMetadata = userObject.get("user_metadata");
+        if (rawMetadata instanceof Map<?, ?> metaMap) {
+            Object rawHoTen = metaMap.get("ho_ten");
+            if (rawHoTen instanceof String strHoTen && !strHoTen.isBlank()) {
+                hoTen = strHoTen.trim();
+            }
+            Object rawPhone = metaMap.get("so_dien_thoai");
+            if (rawPhone instanceof String strPhone && !strPhone.isBlank()) {
+                soDienThoai = strPhone.trim();
+            }
+        }
+
+        return new SupabaseVerifiedIdentity(supabaseUserId, email, emailConfirmed, hoTen, soDienThoai);
+    }
+
+    private static boolean isEmailConfirmedInPayload(Map<String, Object> map) {
+        if (map == null) {
+            return false;
+        }
+        Object confirmedAt = map.get("email_confirmed_at");
+        if (confirmedAt instanceof String s && !s.isBlank()) {
+            return true;
+        }
+        Object legacyConfirmedAt = map.get("confirmed_at");
+        return legacyConfirmedAt instanceof String s2 && !s2.isBlank();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String extractAccessTokenIfPresent(Map<String, Object> response) {
+        if (response == null) {
+            return null;
+        }
+        if (response.get("access_token") instanceof String token && !token.isBlank()) {
+            return token;
+        }
+        if (response.get("session") instanceof Map<?, ?> sessionMap) {
+            Object nestedToken = ((Map<String, Object>) sessionMap).get("access_token");
+            if (nestedToken instanceof String strToken && !strToken.isBlank()) {
+                return strToken;
+            }
+        }
+        return null;
+    }
+
+    private void revokeCallbackSessionBestEffort(String baseUrl, String apiKey, String accessToken) {
+        try {
+            restClient.post()
+                    .uri(baseUrl + "/auth/v1/logout?scope=local")
+                    .header("apikey", apiKey)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception ignored) {
+            // Best-effort dọn phiên tạm tại provider; không làm gián đoạn kết quả xác minh đã thành công
+        }
+    }
+
+    private static RuntimeException mapSupabaseVerifyHttpError(RestClientResponseException ex) {
+        HttpStatusCode status = ex.getStatusCode();
+        String bodyLower = ex.getResponseBodyAsString() != null
+                ? ex.getResponseBodyAsString().toLowerCase(Locale.ROOT)
+                : "";
+
+        if (status.value() == 429
+                || bodyLower.contains("over_email_send_rate_limit")
+                || bodyLower.contains("over_request_rate_limit")) {
+            return new AuthRateLimitExceededException();
+        }
+
+        if (status.value() == 400
+                || status.value() == 401
+                || status.value() == 403
+                || status.value() == 404
+                || status.value() == 410
+                || status.value() == 422
+                || bodyLower.contains("otp_expired")
+                || bodyLower.contains("otp_disabled")
+                || bodyLower.contains("token_expired")
+                || bodyLower.contains("invalid")
+                || bodyLower.contains("expired")
+                || bodyLower.contains("not_found")
+                || bodyLower.contains("bad_code_verifier")) {
+            return new InvalidVerificationLinkException();
+        }
+
+        return new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
     }
 
     private static RuntimeException mapSupabaseHttpError(RestClientResponseException ex) {
