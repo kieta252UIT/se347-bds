@@ -24,6 +24,25 @@ jobs:
   build:
     name: Test & Build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: se214_test
+          POSTGRES_USER: se214_test
+          POSTGRES_PASSWORD: local-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U se214_test -d se214_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_TEST_URL: jdbc:postgresql://localhost:5432/se214_test
+      DB_TEST_USERNAME: se214_test
+      DB_TEST_PASSWORD: local-ci-only
+      ALLOW_TEST_SCHEMA_RESET: 'true'
     defaults:
       run:
         working-directory: backend
@@ -43,3 +62,11 @@ jobs:
 
       - name: Build and verify with Maven
         run: ./mvnw --batch-mode verify
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
