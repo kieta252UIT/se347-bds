@@ -15,10 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * REST Controller xử lý đăng ký tài khoản Người dùng qua Supabase Auth (UC-25 / FR-15 / AC-15.1).
- * Endpoint: POST /api/auth/register (operationId: dangKyNguoiDung).
- */
+
 @RestController
 @RequestMapping({"/api/auth", "/auth"})
 public class AuthRegistrationController {
