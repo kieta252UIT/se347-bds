@@ -1,0 +1,9 @@
+{
+  "approved_ddl_unchanged": true,
+  "business_tables": 12,
+  "pom_xml": "valid",
+  "supabase_cli_app_migrations": false,
+  "supabase_auto_seed": false,
+  "local_links_checked": 18,
+  "ddl_sha256": "54f35eef2e441b02d8d05f34653ae61c5e50aeebeb7acaa290f41b86ac3cc62d"
+}

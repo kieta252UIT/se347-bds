@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-14",
+  "database": "PostgreSQL 17.11, disposable local container",
+  "command": "mvnw.cmd --batch-mode verify",
+  "tests": 21,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "suites": [
+    {
+      "name": "com.realestates.backend.auth.SupabaseAuthRegistrationTests",
+      "tests": "5",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.realestates.backend.BackendApplicationTests",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.realestates.backend.database.FlywayMigrationTests",
+      "tests": "11",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    {
+      "name": "com.realestates.backend.HttpsSameOriginAndApiRoutingTests",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    }
+  ],
+  "scope": "Migration and existing backend tests; not Supabase cloud/Auth/Storage integration."
+}
