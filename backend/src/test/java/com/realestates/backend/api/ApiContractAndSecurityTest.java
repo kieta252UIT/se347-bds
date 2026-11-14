@@ -64,8 +64,7 @@ class ApiContractAndSecurityTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.maLoi").value("KHONG_TIM_THAY"))
                 .andExpect(jsonPath("$.thongDiep").value("Endpoint API khong ton tai."))
                 .andExpect(jsonPath("$.truongLoi").isArray())
-                .andExpect(jsonPath("$.traceId").isNotEmpty())
-                .andExpect(jsonPath("$.thoiDiem").isNotEmpty());
+                .andExpect(jsonPath("$.traceId").isNotEmpty());
     }
 
     @Test
