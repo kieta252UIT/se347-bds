@@ -2,6 +2,7 @@ package com.realestates.backend.auth.exception;
 
 import com.realestates.backend.auth.application.AuthRegistrationService;
 import com.realestates.backend.auth.controller.AuthEmailVerificationController;
+import com.realestates.backend.auth.controller.AuthLoginController;
 import com.realestates.backend.auth.controller.AuthRegistrationController;
 import com.realestates.backend.auth.dto.LoiApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,7 +26,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = {
         AuthRegistrationController.class,
-        AuthEmailVerificationController.class
+        AuthEmailVerificationController.class,
+        AuthLoginController.class
 })
 public class AuthExceptionHandler {
 
@@ -50,6 +52,62 @@ public class AuthExceptionHandler {
     ) {
         return buildErrorResponse(
                 HttpStatus.BAD_REQUEST,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<LoiApiResponse> handleInvalidCredentials(
+            InvalidCredentialsException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<LoiApiResponse> handleEmailNotVerified(
+            EmailNotVerifiedException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.FORBIDDEN,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<LoiApiResponse> handleAccountLocked(
+            AccountLockedException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.FORBIDDEN,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(AuthSyncInProgressException.class)
+    public ResponseEntity<LoiApiResponse> handleAuthSyncInProgress(
+            AuthSyncInProgressException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.CONFLICT,
                 ex.getMaLoi(),
                 ex.getMessage(),
                 List.of(),

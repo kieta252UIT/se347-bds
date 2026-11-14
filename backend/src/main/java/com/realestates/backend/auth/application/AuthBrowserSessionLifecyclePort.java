@@ -20,4 +20,27 @@ public interface AuthBrowserSessionLifecyclePort {
      * Sinh token CSRF mới ứng với ngữ cảnh khách (anonymous context) sau khi xóa cookie phiên.
      */
     String issueAnonymousCsrfToken();
+
+    /**
+     * Sinh giá trị bí mật ngẫu nhiên 32 byte (mã hóa Base64URL không padding) cho cookie phiên opaque
+     * (__Host-se214_session) theo PHIEN-04 & thiet-ke-phien-sprint-1.md §2.1.
+     */
+    default String generateRawSessionCookie() {
+        throw new UnsupportedOperationException("Chưa cài đặt generateRawSessionCookie");
+    }
+
+    /**
+     * Băm một chiều SHA-256 (Base64URL không padding) từ giá trị cookie phiên thô để lưu vào ma_cookie_bam (PHIEN-05).
+     */
+    default String hashSessionCookie(String rawSessionCookieValue) {
+        throw new UnsupportedOperationException("Chưa cài đặt hashSessionCookie");
+    }
+
+    /**
+     * Sinh token CSRF mới gắn với ngữ cảnh phiên đăng nhập hiện tại
+     * (v1|csrf|<sha256_base64url(raw_session_cookie)>|<nonce>) theo PHIEN-06 & thiet-ke-phien-sprint-1.md §2.2.
+     */
+    default String issueSessionCsrfToken(String rawSessionCookieValue) {
+        throw new UnsupportedOperationException("Chưa cài đặt issueSessionCsrfToken");
+    }
 }

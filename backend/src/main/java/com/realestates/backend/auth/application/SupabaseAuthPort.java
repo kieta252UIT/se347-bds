@@ -54,4 +54,20 @@ public interface SupabaseAuthPort {
     default void deleteUserOnCompensation(UUID supabaseAuthUserId) {
         // Mặc định no-op cho các stub đơn giản
     }
+
+    /**
+     * Xác thực email + mật khẩu với Supabase Auth (POST /auth/v1/token?grant_type=password)
+     * phục vụ đăng nhập (UC-27 / FR-15 / AC-15.4 / PHIEN-02).
+     */
+    default SupabaseAuthenticatedSession authenticateWithPassword(String normalizedEmail, String rawPassword) {
+        throw new UnsupportedOperationException("Chưa cài đặt authenticateWithPassword");
+    }
+
+    /**
+     * Thu hồi cục bộ (scope=local) phiên Supabase Auth tương ứng với accessToken (best-effort)
+     * khi quá trình kiểm tra hậu kỳ hoặc lưu phiên PostgreSQL thất bại (thiet-ke-phien-sprint-1.md §3.1).
+     */
+    default void revokeProviderSessionLocal(String accessToken) {
+        // Mặc định no-op cho các stub đơn giản
+    }
 }

@@ -36,6 +36,9 @@ public class InMemoryAuthEmailRateLimiter implements AuthEmailRateLimitPort {
     public static final int MAX_IP_EMAIL_REQUESTS_PER_HOUR = 20;
     public static final Duration VERIFY_IP_WINDOW = Duration.ofMinutes(5);
     public static final int MAX_VERIFY_ATTEMPTS_PER_IP_WINDOW = 20;
+    public static final Duration LOGIN_WINDOW = Duration.ofMinutes(5);
+    public static final int MAX_LOGIN_ATTEMPTS_PER_IP_EMAIL_WINDOW = 10;
+    public static final int MAX_LOGIN_ATTEMPTS_PER_IP_WINDOW = 60;
 
     private static final class Bucket {
         private final Deque<Instant> timestamps = new ArrayDeque<>();
@@ -99,6 +102,24 @@ public class InMemoryAuthEmailRateLimiter implements AuthEmailRateLimitPort {
         checkLimitOrThrow(verifyIpKey, MAX_VERIFY_ATTEMPTS_PER_IP_WINDOW, VERIFY_IP_WINDOW, now);
         ensureCapacityForKeys(now, verifyIpKey);
         recordHit(verifyIpKey, VERIFY_IP_WINDOW, now);
+    }
+
+    @Override
+    public synchronized void checkAndRecordLoginAttempt(String clientIp, String normalizedEmail) {
+        Instant now = clock.instant();
+        String safeIp = normalizeIp(clientIp);
+        String safeEmail = normalizeEmail(normalizedEmail);
+
+        String loginIpEmailKey = "login:5m:ip_email:" + safeIp + "|" + safeEmail;
+        String loginIpKey = "login:5m:ip:" + safeIp;
+
+        checkLimitOrThrow(loginIpEmailKey, MAX_LOGIN_ATTEMPTS_PER_IP_EMAIL_WINDOW, LOGIN_WINDOW, now);
+        checkLimitOrThrow(loginIpKey, MAX_LOGIN_ATTEMPTS_PER_IP_WINDOW, LOGIN_WINDOW, now);
+
+        ensureCapacityForKeys(now, loginIpEmailKey, loginIpKey);
+
+        recordHit(loginIpEmailKey, LOGIN_WINDOW, now);
+        recordHit(loginIpKey, LOGIN_WINDOW, now);
     }
 
     private void checkLimitOrThrow(String key, int maxAllowed, Duration window, Instant now) {

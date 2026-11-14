@@ -22,4 +22,12 @@ public interface AuthEmailRateLimitPort {
      * Kiểm tra và ghi nhận lượt hoàn tất xác minh email (verify tokenHash) theo IP.
      */
     void checkAndRecordEmailVerifyAttempt(String clientIp);
+
+    /**
+     * Kiểm tra và ghi nhận lượt đăng nhập theo (IP + email chuẩn hóa: 10 lần/5 phút)
+     * và theo IP (60 lần/5 phút) theo api-specification-sprint-1.md §8.8.
+     */
+    default void checkAndRecordLoginAttempt(String clientIp, String normalizedEmail) {
+        // Mặc định no-op cho các stub đơn giản
+    }
 }
