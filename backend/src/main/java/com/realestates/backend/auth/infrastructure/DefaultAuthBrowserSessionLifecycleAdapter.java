@@ -123,10 +123,26 @@ public class DefaultAuthBrowserSessionLifecycleAdapter implements AuthBrowserSes
                 : "anonymous";
         String expectedMessage = "v1|csrf|" + context + "|" + parts[1];
         String expectedMac = hmacSha256Base64Url(expectedMessage, csrfHmacSecret);
-        return MessageDigest.isEqual(
+        boolean matchesContext = MessageDigest.isEqual(
                 expectedMac.getBytes(StandardCharsets.UTF_8),
                 parts[2].getBytes(StandardCharsets.UTF_8)
         );
+        if (matchesContext) {
+            return true;
+        }
+
+        // Nếu cookie phiên hiện có trên request đã bị thu hồi (ví dụ sau logout hoặc xác minh email),
+        // và client gửi token CSRF ở ngữ cảnh anonymous hợp lệ, vẫn chấp nhận để không chặn các yêu cầu logout lặp / dọn dẹp (openapi / §3.2)
+        if (rawSessionCookieOrNull != null && !rawSessionCookieOrNull.isBlank() && isSessionCookieRevoked(rawSessionCookieOrNull)) {
+            String anonMessage = "v1|csrf|anonymous|" + parts[1];
+            String anonMac = hmacSha256Base64Url(anonMessage, csrfHmacSecret);
+            return MessageDigest.isEqual(
+                    anonMac.getBytes(StandardCharsets.UTF_8),
+                    parts[2].getBytes(StandardCharsets.UTF_8)
+            );
+        }
+
+        return false;
     }
 
     public boolean isSessionCookieRevoked(String rawSessionCookieValue) {

@@ -334,6 +334,30 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
         return new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
     }
 
+    @Override
+    public void revokeProviderSessionLocal(String rawAccessToken) {
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String apiKey = !isBlank(properties.getAnonKey())
+                ? properties.getAnonKey().trim()
+                : (!isBlank(properties.getServiceRoleKey()) ? properties.getServiceRoleKey().trim() : "");
+
+        if (baseUrl.isBlank() || apiKey.isBlank() || isBlank(rawAccessToken)) {
+            return;
+        }
+
+        try {
+            restClient.post()
+                    .uri(baseUrl + "/auth/v1/logout?scope=local")
+                    .header("apikey", apiKey)
+                    .header("Authorization", "Bearer " + rawAccessToken.trim())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception ignored) {
+            // Best-effort cleanup theo PHIEN-11 / openapi: lỗi provider không phục hồi quyền app và không cản trở logout thành công.
+        }
+    }
+
     private static boolean isBlank(String str) {
         return str == null || str.isBlank();
     }

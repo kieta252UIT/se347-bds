@@ -37,4 +37,12 @@ public interface SupabaseAuthPort {
     default void deleteUserOnCompensation(UUID supabaseAuthUserId) {
         // Mặc định no-op cho các stub đơn giản
     }
+
+    /**
+     * Yêu cầu Supabase Auth thu hồi phiên với phạm vi local (POST /auth/v1/logout?scope=local) (PHIEN-11).
+     * Provider lỗi sau commit không hồi phục quyền ứng dụng (best-effort cleanup).
+     */
+    default void revokeProviderSessionLocal(String rawAccessToken) {
+        // Mặc định no-op nếu không có provider hoặc adapter stub
+    }
 }
