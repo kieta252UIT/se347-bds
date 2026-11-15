@@ -22,7 +22,17 @@ export function RoleGuard({ allowedRoles, children }: RoleGuardProps) {
     return <Navigate to="/dang-nhap" replace />;
   }
 
-  if (!allowedRoles.includes(role)) {
+  const hasPermission = allowedRoles.some((r) => {
+    const rLower = r.toLowerCase();
+    const userRoleLower = role.toLowerCase();
+    if (rLower === userRoleLower) return true;
+    if ((rLower === "admin" || rLower === "quan_tri_vien") && (userRoleLower === "admin" || userRoleLower === "quan_tri_vien")) return true;
+    if ((rLower === "kdv" || rLower === "kiem_duyet_vien") && (userRoleLower === "kdv" || userRoleLower === "kiem_duyet_vien")) return true;
+    if (rLower === "nguoi_dung" && userRoleLower === "nguoi_dung") return true;
+    return false;
+  });
+
+  if (!hasPermission) {
     return <Navigate to="/403" replace />;
   }
 
