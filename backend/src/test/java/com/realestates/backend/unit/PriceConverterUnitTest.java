@@ -123,6 +123,19 @@ class PriceConverterUnitTest {
         assertThat(result.giaM2ChuanVnd()).isEqualByComparingTo("100000");
     }
 
+    @Test
+    @DisplayName("TIN-P-R6: Thuê 0.3m2 - 10.000.000,01 VND_NAM -> Không bị sai số do làm tròn trung gian")
+    void shouldConvertTinPR6WithoutIntermediateRounding() {
+        KetQuaQuyDoiGia result = PriceConverter.quyDoi(
+                new BigDecimal("10000000.01"),
+                DonViGia.VND_NAM,
+                new BigDecimal("0.3")
+        );
+
+        assertThat(result.giaTongChuanVnd()).isEqualByComparingTo("833333.33");
+        assertThat(result.giaM2ChuanVnd()).isEqualByComparingTo("2777777.78");
+    }
+
     @ParameterizedTest
     @CsvSource({
             "0, 50",

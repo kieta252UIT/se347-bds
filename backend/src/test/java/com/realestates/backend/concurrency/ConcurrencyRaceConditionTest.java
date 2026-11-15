@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.realestates.backend.database.TestDatabaseSettings;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,6 +60,7 @@ class ConcurrencyRaceConditionTest {
 
             AtomicInteger successCount = new AtomicInteger(0);
             AtomicInteger rejectedCount = new AtomicInteger(0);
+            CopyOnWriteArrayList<Throwable> exceptions = new CopyOnWriteArrayList<>();
 
             for (int i = 0; i < numberOfThreads; i++) {
                 executor.submit(() -> {
@@ -75,11 +77,11 @@ class ConcurrencyRaceConditionTest {
 
                         if (affectedRows == 1) {
                             successCount.incrementAndGet();
-                        } else {
+                        } else if (affectedRows == 0) {
                             rejectedCount.incrementAndGet();
                         }
-                    } catch (Exception e) {
-                        rejectedCount.incrementAndGet();
+                    } catch (Throwable e) {
+                        exceptions.add(e);
                     } finally {
                         endGate.countDown();
                     }
@@ -93,6 +95,7 @@ class ConcurrencyRaceConditionTest {
 
             // 4. Kiểm tra kết quả bất biến:
             assertThat(completed).isTrue();
+            assertThat(exceptions).as("Các luồng không được phát sinh lỗi kết nối hoặc ngoại lệ hệ thống").isEmpty();
             assertThat(successCount.get()).isEqualTo(1);
             assertThat(rejectedCount.get()).isEqualTo(1);
 

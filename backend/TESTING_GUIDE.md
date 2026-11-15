@@ -140,7 +140,43 @@ backend/
 
 ## 4. HƯỚNG DẪN CÂU LỆNH THỰC THI (TEST EXECUTION COMMANDS)
 
-Mở terminal tại thư mục `backend/` (đảm bảo đã set 4 biến môi trường cho các bài test DB):
+> [!IMPORTANT]
+> **Điều kiện tiên quyết trước khi chạy Test Suite hoặc các test API / DB / Concurrency:**
+> Các lớp kiểm thử Spring context sử dụng `TestDatabaseSettings` kết nối trực tiếp đến PostgreSQL 17 thật và yêu cầu database riêng kết thúc bằng hậu tố `_test`.
+>
+> 1. **Bật nhanh PostgreSQL 17 test container (nếu chưa có):**
+>    ```bash
+>    docker run -d --name postgres-test -p 5432:5432 \
+>      -e POSTGRES_DB=se214_test \
+>      -e POSTGRES_USER=se214_test \
+>      -e POSTGRES_PASSWORD=local-ci-only \
+>      postgres:17-alpine
+>    ```
+> 2. **Thiết lập 4 biến môi trường bắt buộc trong terminal hiện tại:**
+>    - **PowerShell:**
+>      ```powershell
+>      $env:ALLOW_TEST_SCHEMA_RESET = "true"
+>      $env:DB_TEST_URL = "jdbc:postgresql://localhost:5432/se214_test"
+>      $env:DB_TEST_USERNAME = "se214_test"
+>      $env:DB_TEST_PASSWORD = "local-ci-only"
+>      ```
+>    - **Command Prompt (CMD):**
+>      ```cmd
+>      set ALLOW_TEST_SCHEMA_RESET=true
+>      set DB_TEST_URL=jdbc:postgresql://localhost:5432/se214_test
+>      set DB_TEST_USERNAME=se214_test
+>      set DB_TEST_PASSWORD=local-ci-only
+>      ```
+>    - **Git Bash / Linux / macOS:**
+>      ```bash
+>      export ALLOW_TEST_SCHEMA_RESET="true"
+>      export DB_TEST_URL="jdbc:postgresql://localhost:5432/se214_test"
+>      export DB_TEST_USERNAME="se214_test"
+>      export DB_TEST_PASSWORD="local-ci-only"
+>      ```
+> *(Riêng lệnh chạy Unit Test `.\mvnw.cmd test -Dtest=*UnitTest` là POJO thuần túy, hoạt động ngay mà không cần thiết lập trên).*
+
+Mở terminal tại thư mục `backend/` và thực thi các lệnh tương ứng:
 
 ### 4.1. Chạy toàn bộ các ca kiểm thử (Full Test Suite)
 Lệnh này sẽ biên dịch, chạy toàn bộ Unit test, API test, Database Integration test và Concurrency test:
