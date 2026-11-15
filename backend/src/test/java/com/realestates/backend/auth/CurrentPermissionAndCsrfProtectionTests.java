@@ -954,6 +954,7 @@ class CurrentPermissionAndCsrfProtectionTests {
         ReflectionTestUtils.setField(config, "sessionCookieName", AuthSessionCookieConfig.SESSION_COOKIE_NAME);
         ReflectionTestUtils.setField(config, "sessionMaxAgeSeconds", AuthSessionCookieConfig.SESSION_MAX_AGE_SECONDS);
         ReflectionTestUtils.setField(config, "csrfCookieName", AuthSessionCookieConfig.CSRF_COOKIE_NAME);
+        ReflectionTestUtils.setField(config, "sessionPersistent", true);
         return config;
     }
 

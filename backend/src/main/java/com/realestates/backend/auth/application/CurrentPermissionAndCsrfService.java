@@ -59,6 +59,7 @@ public class CurrentPermissionAndCsrfService {
     private final PhienXacThucRepository phienXacThucRepository;
     private final AuthBrowserSessionLifecyclePort sessionLifecyclePort;
     private final Set<String> allowedOrigins;
+    private final AuthSessionMaintenanceService sessionMaintenanceService;
 
     /**
      * Bảng khóa cấp dòng theo thứ tự cố định: tai_khoan -> phien_xac_thuc -> tài nguyên nghiệp vụ
@@ -74,9 +75,20 @@ public class CurrentPermissionAndCsrfService {
             AuthBrowserSessionLifecyclePort sessionLifecyclePort,
             List<String> allowedOrigins
     ) {
+        this(taiKhoanRepository, phienXacThucRepository, sessionLifecyclePort, allowedOrigins, null);
+    }
+
+    public CurrentPermissionAndCsrfService(
+            TaiKhoanRepository taiKhoanRepository,
+            PhienXacThucRepository phienXacThucRepository,
+            AuthBrowserSessionLifecyclePort sessionLifecyclePort,
+            List<String> allowedOrigins,
+            AuthSessionMaintenanceService sessionMaintenanceService
+    ) {
         this.taiKhoanRepository = Objects.requireNonNull(taiKhoanRepository, "taiKhoanRepository không được null");
         this.phienXacThucRepository = Objects.requireNonNull(phienXacThucRepository, "phienXacThucRepository không được null");
         this.sessionLifecyclePort = Objects.requireNonNull(sessionLifecyclePort, "sessionLifecyclePort không được null");
+        this.sessionMaintenanceService = sessionMaintenanceService;
         this.allowedOrigins = (allowedOrigins == null || allowedOrigins.isEmpty())
                 ? Set.of("https://localhost", "http://localhost:5173")
                 : allowedOrigins.stream()
@@ -91,13 +103,15 @@ public class CurrentPermissionAndCsrfService {
             TaiKhoanRepository taiKhoanRepository,
             PhienXacThucRepository phienXacThucRepository,
             AuthBrowserSessionLifecyclePort sessionLifecyclePort,
-            @Value("${app.security.allowed-origins:https://localhost,http://localhost:5173}") String allowedOriginsProperty
+            @Value("${app.security.allowed-origins:https://localhost,http://localhost:5173}") String allowedOriginsProperty,
+            @Autowired(required = false) AuthSessionMaintenanceService sessionMaintenanceService
     ) {
         this(
                 taiKhoanRepository,
                 phienXacThucRepository,
                 sessionLifecyclePort,
-                parseAllowedOrigins(allowedOriginsProperty)
+                parseAllowedOrigins(allowedOriginsProperty),
+                sessionMaintenanceService
         );
     }
 
@@ -220,6 +234,9 @@ public class CurrentPermissionAndCsrfService {
                 .orElseThrow(UnauthenticatedSessionException::new);
 
         kiemTraTrangThaiTaiKhoanVaPhien(phien, taiKhoan);
+        if (sessionMaintenanceService != null) {
+            phien = sessionMaintenanceService.refreshAccessTokenNeuCan(phien, taiKhoan);
+        }
         return PrincipalPhienHienTai.tuPhienVaTaiKhoan(phien, taiKhoan);
     }
 

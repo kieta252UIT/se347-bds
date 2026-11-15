@@ -218,6 +218,104 @@ public final class PhienXacThuc {
         );
     }
 
+    /**
+     * Kiểm tra xem access token đã đến hạn kỹ thuật hoặc sắp hết hạn (trong bufferSeconds)
+     * cần phải làm mới (refresh) hay chưa theo PHIEN-08.
+     */
+    public boolean isCanRefreshAccessToken(Instant now, long bufferSeconds) {
+        if (this.accessTokenHetHanLuc == null) {
+            return true;
+        }
+        Instant checkTime = (now != null ? now : Instant.now()).plusSeconds(Math.max(0, bufferSeconds));
+        return checkTime.isAfter(this.accessTokenHetHanLuc);
+    }
+
+    /**
+     * Cấp refresh lease 30s cho phiên (PHIEN-08 & ck_phien_lease_cap).
+     */
+    public PhienXacThuc nhanRefreshLease(UUID leaseId, Instant leaseDenLuc) {
+        Objects.requireNonNull(leaseId, "leaseId không được null");
+        Objects.requireNonNull(leaseDenLuc, "leaseDenLuc không được null");
+        return new PhienXacThuc(
+                this.id,
+                this.taiKhoanId,
+                this.maCookieBam,
+                this.mocThuHoiLucCap,
+                this.taoLuc,
+                this.thuHoiLuc,
+                this.lyDoThuHoi,
+                this.supabaseSessionId,
+                this.accessTokenMaHoa,
+                this.refreshTokenMaHoa,
+                this.accessTokenHetHanLuc,
+                this.phienBanKhoaMaHoa,
+                this.phienBanCapNhat + 1L,
+                leaseId,
+                leaseDenLuc,
+                this.canThuHoiProvider
+        );
+    }
+
+    /**
+     * Cập nhật cặp token mã hóa mới sau lượt refresh thành công, giải phóng lease và tăng version CAS (PHIEN-08).
+     */
+    public PhienXacThuc capNhatTokenSauRefresh(
+            byte[] newAccessTokenMaHoa,
+            byte[] newRefreshTokenMaHoa,
+            Instant newAccessTokenHetHanLuc,
+            String phienBanKhoaMaHoa
+    ) {
+        Objects.requireNonNull(newAccessTokenMaHoa, "newAccessTokenMaHoa không được null");
+        Objects.requireNonNull(newRefreshTokenMaHoa, "newRefreshTokenMaHoa không được null");
+        Objects.requireNonNull(newAccessTokenHetHanLuc, "newAccessTokenHetHanLuc không được null");
+        Objects.requireNonNull(phienBanKhoaMaHoa, "phienBanKhoaMaHoa không được null");
+        return new PhienXacThuc(
+                this.id,
+                this.taiKhoanId,
+                this.maCookieBam,
+                this.mocThuHoiLucCap,
+                this.taoLuc,
+                this.thuHoiLuc,
+                this.lyDoThuHoi,
+                this.supabaseSessionId,
+                newAccessTokenMaHoa,
+                newRefreshTokenMaHoa,
+                newAccessTokenHetHanLuc,
+                phienBanKhoaMaHoa,
+                this.phienBanCapNhat + 1L,
+                null,
+                null,
+                this.canThuHoiProvider
+        );
+    }
+
+    /**
+     * Giải phóng lease khi lượt refresh kết thúc hoặc bị hủy.
+     */
+    public PhienXacThuc giaiPhongLease() {
+        if (this.refreshLeaseId == null && this.refreshLeaseDenLuc == null) {
+            return this;
+        }
+        return new PhienXacThuc(
+                this.id,
+                this.taiKhoanId,
+                this.maCookieBam,
+                this.mocThuHoiLucCap,
+                this.taoLuc,
+                this.thuHoiLuc,
+                this.lyDoThuHoi,
+                this.supabaseSessionId,
+                this.accessTokenMaHoa,
+                this.refreshTokenMaHoa,
+                this.accessTokenHetHanLuc,
+                this.phienBanKhoaMaHoa,
+                this.phienBanCapNhat + 1L,
+                null,
+                null,
+                this.canThuHoiProvider
+        );
+    }
+
     private void validateSchemaInvariants() {
         // ck_phien_lease_cap
         boolean bothLeaseNull = (refreshLeaseId == null && refreshLeaseDenLuc == null);

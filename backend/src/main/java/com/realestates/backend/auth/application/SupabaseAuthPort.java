@@ -23,6 +23,14 @@ public interface SupabaseAuthPort {
     void sendSignupVerificationEmail(String normalizedEmail);
 
     /**
+     * Làm mới access token và refresh token qua Supabase Auth (POST /auth/v1/token?grant_type=refresh_token)
+     * theo cơ chế rotation của provider (PHIEN-08 & TS1-071).
+     */
+    default SupabaseRefreshedSession refreshSessionToken(String rawRefreshToken) {
+        throw new UnsupportedOperationException("Chưa cài đặt refreshSessionToken");
+    }
+
+    /**
      * Xóa bù trừ (compensation) user trên Supabase Auth nếu bước lưu bản ghi tai_khoan
      * phía ứng dụng gặp sự cố, giúp lần thử lại (retry đăng ký dở - TS1-007 / AUTH-10) không bị kẹt.
      */

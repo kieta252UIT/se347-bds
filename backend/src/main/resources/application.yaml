@@ -56,6 +56,7 @@ app:
     allowed-origins: ${FRONTEND_ORIGIN:https://localhost,http://localhost:5173}
     cookie-secure: ${COOKIE_SECURE:true}
     session-cookie-name: ${SESSION_COOKIE_NAME:__Host-se214_session}
+    session-persistent: ${SESSION_PERSISTENT:false}
     session-max-age-seconds: ${SESSION_MAX_AGE_SECONDS:31536000}
     csrf-cookie-name: ${CSRF_COOKIE_NAME:__Host-se214_csrf}
 

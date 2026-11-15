@@ -146,6 +146,82 @@ public class InMemoryPhienXacThucRepository implements PhienXacThucRepository {
         return Optional.of(revoked);
     }
 
+    @Override
+    public synchronized Optional<PhienXacThuc> tryAcquireRefreshLease(
+            UUID phienId,
+            UUID leaseId,
+            Instant leaseUntil,
+            Instant now
+    ) {
+        if (phienId == null || leaseId == null || leaseUntil == null) {
+            return Optional.empty();
+        }
+        Instant currentTime = now != null ? now : Instant.now();
+        PhienXacThuc session = sessionsById.get(phienId);
+        if (session == null || session.isDaThuHoi()) {
+            return Optional.empty();
+        }
+
+        // Kiểm tra xem có lease nào đang hoạt động chưa hết hạn hay không
+        if (session.getRefreshLeaseDenLuc() != null && session.getRefreshLeaseDenLuc().isAfter(currentTime)) {
+            // Đang có worker khác giữ lease hợp lệ
+            return Optional.empty();
+        }
+
+        PhienXacThuc leased = session.nhanRefreshLease(leaseId, leaseUntil);
+        putInternal(leased);
+        return Optional.of(leased);
+    }
+
+    @Override
+    public synchronized boolean updateRefreshedTokensWithCas(
+            UUID phienId,
+            UUID expectedLeaseId,
+            long expectedCasVersion,
+            byte[] newAccessTokenMaHoa,
+            byte[] newRefreshTokenMaHoa,
+            Instant newAccessTokenHetHanLuc,
+            String phienBanKhoaMaHoa,
+            Instant now
+    ) {
+        if (phienId == null || expectedLeaseId == null) {
+            return false;
+        }
+        PhienXacThuc session = sessionsById.get(phienId);
+        if (session == null || session.isDaThuHoi()) {
+            return false;
+        }
+
+        // CAS check: leaseId và phienBanCapNhat phải khớp chính xác
+        if (!expectedLeaseId.equals(session.getRefreshLeaseId())) {
+            return false;
+        }
+        if (session.getPhienBanCapNhat() != expectedCasVersion) {
+            return false;
+        }
+
+        PhienXacThuc updated = session.capNhatTokenSauRefresh(
+                newAccessTokenMaHoa,
+                newRefreshTokenMaHoa,
+                newAccessTokenHetHanLuc,
+                phienBanKhoaMaHoa
+        );
+        putInternal(updated);
+        return true;
+    }
+
+    @Override
+    public synchronized void releaseRefreshLease(UUID phienId, UUID leaseId) {
+        if (phienId == null || leaseId == null) {
+            return;
+        }
+        PhienXacThuc session = sessionsById.get(phienId);
+        if (session != null && leaseId.equals(session.getRefreshLeaseId())) {
+            PhienXacThuc released = session.giaiPhongLease();
+            putInternal(released);
+        }
+    }
+
     public synchronized void clear() {
         sessionsById.clear();
         sessionIdByCookieHash.clear();

@@ -44,4 +44,34 @@ public interface PhienXacThucRepository {
             Instant now,
             boolean giuLaiCredentialDeThuHoiProvider
     );
+
+    /**
+     * Thử nhận refresh lease 30s cho phiên (PHIEN-08 & TS1-071) dưới khóa nguyên tử.
+     * Trả về Optional<PhienXacThuc> chứa leaseId nếu thành công, hoặc Optional.empty() nếu lease hiện tại của worker khác còn hiệu lực.
+     */
+    default Optional<PhienXacThuc> tryAcquireRefreshLease(UUID phienId, UUID leaseId, Instant leaseUntil, Instant now) {
+        return Optional.empty();
+    }
+
+    /**
+     * Cập nhật cặp token mã hóa mới sau refresh với CAS version và kiểm tra leaseId còn khớp (PHIEN-08 & TS1-071).
+     */
+    default boolean updateRefreshedTokensWithCas(
+            UUID phienId,
+            UUID expectedLeaseId,
+            long expectedCasVersion,
+            byte[] newAccessTokenMaHoa,
+            byte[] newRefreshTokenMaHoa,
+            Instant newAccessTokenHetHanLuc,
+            String phienBanKhoaMaHoa,
+            Instant now
+    ) {
+        return false;
+    }
+
+    /**
+     * Giải phóng lease khi lượt refresh kết thúc hoặc hủy (PHIEN-08).
+     */
+    default void releaseRefreshLease(UUID phienId, UUID leaseId) {
+    }
 }

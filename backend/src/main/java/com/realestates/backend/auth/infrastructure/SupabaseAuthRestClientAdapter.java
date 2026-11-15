@@ -1,6 +1,7 @@
 package com.realestates.backend.auth.infrastructure;
 
 import com.realestates.backend.auth.application.SupabaseAuthPort;
+import com.realestates.backend.auth.application.SupabaseRefreshedSession;
 import com.realestates.backend.auth.application.SupabaseRegisteredUser;
 import com.realestates.backend.auth.domain.VaiTroTaiKhoan;
 import com.realestates.backend.auth.exception.AuthProviderUnavailableException;
@@ -111,6 +112,60 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
                     .body(resendBody)
                     .retrieve()
                     .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            throw mapSupabaseHttpError(ex);
+        } catch (RestClientException ex) {
+            throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        }
+    }
+
+    @Override
+    public SupabaseRefreshedSession refreshSessionToken(String rawRefreshToken) {
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            throw new IllegalArgumentException("rawRefreshToken không được rỗng");
+        }
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String apiKey = !isBlank(properties.getAnonKey())
+                ? properties.getAnonKey().trim()
+                : (!isBlank(properties.getServiceRoleKey()) ? properties.getServiceRoleKey().trim() : "");
+
+        if (baseUrl.isBlank() || apiKey.isBlank()) {
+            throw new AuthProviderUnavailableException();
+        }
+
+        Map<String, Object> refreshBody = Map.of(
+                "refresh_token", rawRefreshToken.trim()
+        );
+
+        try {
+            Map<String, Object> response = restClient.post()
+                    .uri(baseUrl + "/auth/v1/token?grant_type=refresh_token")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .header("apikey", apiKey)
+                    .body(refreshBody)
+                    .retrieve()
+                    .body(MAP_TYPE);
+
+            if (response == null) {
+                throw new AuthProviderUnavailableException();
+            }
+
+            String accessToken = (String) response.get("access_token");
+            String refreshToken = (String) response.get("refresh_token");
+            Number expiresIn = (Number) response.get("expires_in");
+            long expiresSec = expiresIn != null ? expiresIn.longValue() : 3600L;
+
+            UUID supabaseUserId = extractSupabaseUserId(response);
+            UUID supabaseSessionId = extractSupabaseSessionId(response);
+
+            return new SupabaseRefreshedSession(
+                    accessToken != null ? accessToken : "",
+                    refreshToken != null ? refreshToken : rawRefreshToken.trim(),
+                    expiresSec,
+                    supabaseSessionId,
+                    supabaseUserId
+            );
         } catch (RestClientResponseException ex) {
             throw mapSupabaseHttpError(ex);
         } catch (RestClientException ex) {
@@ -236,6 +291,24 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
             }
         }
         throw new AuthProviderUnavailableException();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static UUID extractSupabaseSessionId(Map<String, Object> response) {
+        if (response == null) {
+            return null;
+        }
+        Object rawId = response.get("session_id");
+        if (rawId == null && response.get("session") instanceof Map<?, ?> sessionMap) {
+            rawId = ((Map<String, Object>) sessionMap).get("id");
+        }
+        if (rawId instanceof String idStr && !idStr.isBlank()) {
+            try {
+                return UUID.fromString(idStr.trim());
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return null;
     }
 
     private static RuntimeException mapSupabaseHttpError(RestClientResponseException ex) {
