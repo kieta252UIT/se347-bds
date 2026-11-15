@@ -152,8 +152,8 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                 email,
                 hoTen,
                 soDienThoai,
-                VaiTroTaiKhoan.tuGiaTri(vaiTroStr),
-                TrangThaiTaiKhoan.tuGiaTri(trangThaiStr),
+                chuyenVaiTro(vaiTroStr),
+                chuyenTrangThai(trangThaiStr),
                 emailDaXacMinh,
                 mocThuHoi,
                 syncState,
@@ -161,5 +161,29 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                 taoLuc,
                 capNhatLuc
         );
+    }
+
+    private static VaiTroTaiKhoan chuyenVaiTro(String vaiTroStr) {
+        if (vaiTroStr == null || vaiTroStr.isBlank()) {
+            return VaiTroTaiKhoan.NGUOI_DUNG;
+        }
+        for (VaiTroTaiKhoan vt : VaiTroTaiKhoan.values()) {
+            if (vt.getGiaTri().equalsIgnoreCase(vaiTroStr.trim()) || vt.name().equalsIgnoreCase(vaiTroStr.trim())) {
+                return vt;
+            }
+        }
+        return VaiTroTaiKhoan.NGUOI_DUNG;
+    }
+
+    private static TrangThaiTaiKhoan chuyenTrangThai(String trangThaiStr) {
+        if (trangThaiStr == null || trangThaiStr.isBlank()) {
+            return TrangThaiTaiKhoan.HOAT_DONG;
+        }
+        for (TrangThaiTaiKhoan tt : TrangThaiTaiKhoan.values()) {
+            if (tt.getGiaTri().equalsIgnoreCase(trangThaiStr.trim()) || tt.name().equalsIgnoreCase(trangThaiStr.trim())) {
+                return tt;
+            }
+        }
+        return TrangThaiTaiKhoan.HOAT_DONG;
     }
 }
