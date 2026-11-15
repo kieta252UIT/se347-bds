@@ -331,6 +331,38 @@ class AuthSessionMaintenanceAndRestartTests {
                 .doesNotContainIgnoringCase("Expires=");
     }
 
+    @Test
+    @DisplayName("Cấu hình session-clear-on-restart: true: Khi restart backend, các phiên cũ tạo trước thời điểm khởi động bị từ chối 401 CHUA_DANG_NHAP và buộc đăng nhập lại")
+    void backendRestartWithSessionClearOnRestartEnabledRequiresReLogin() throws Exception {
+        ActiveSessionFixture fixture = seedActiveSession("clear.restart@example.com", VaiTroTaiKhoan.NGUOI_DUNG);
+
+        AuthSessionCookieConfig sessionConfig = createDefaultCookieConfig();
+
+        // Chờ 10ms để đảm bảo mốc thời gian serverBootTime của backend mới sau thời điểm tạo phiên
+        Thread.sleep(15L);
+
+        // Instance 2 khởi động mới với cấu hình session-clear-on-restart = true
+        DefaultAuthBrowserSessionLifecycleAdapter newLifecycleAdapter =
+                new DefaultAuthBrowserSessionLifecycleAdapter(CSRF_SECRET, phienXacThucRepository);
+        AuthSessionMaintenanceService newMaintenanceService =
+                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, newLifecycleAdapter, tokenCipher, supabaseAuthPort);
+        newMaintenanceService.setSessionClearOnRestart(true);
+
+        CurrentPermissionAndCsrfService newPermissionService =
+                new CurrentPermissionAndCsrfService(taiKhoanRepository, phienXacThucRepository, newLifecycleAdapter, List.of(ALLOWED_ORIGIN), newMaintenanceService);
+        AuthCsrfAndMeController newController = new AuthCsrfAndMeController(newPermissionService, sessionConfig);
+
+        MockMvc newBackendMockMvc = MockMvcBuilders.standaloneSetup(newController)
+                .setControllerAdvice(new AuthSessionSecurityExceptionHandler())
+                .build();
+
+        // Browser gửi lại cookie cũ sau khi backend đã khởi động lại -> Bị từ chối 401 CHUA_DANG_NHAP
+        newBackendMockMvc.perform(get("/api/me")
+                        .cookie(new Cookie(sessionConfig.getSessionCookieName(), fixture.rawSessionCookie())))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.maLoi").value("CHUA_DANG_NHAP"));
+    }
+
     // =========================================================================
     // 3. TS1-014: Nhiều trình duyệt / profile độc lập cho cùng người dùng
     // =========================================================================

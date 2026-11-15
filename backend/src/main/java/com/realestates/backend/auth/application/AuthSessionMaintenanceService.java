@@ -17,6 +17,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -42,6 +43,11 @@ public class AuthSessionMaintenanceService {
     private final AuthBrowserSessionLifecyclePort sessionLifecyclePort;
     private final SessionTokenCipher sessionTokenCipher;
     private final SupabaseAuthPort supabaseAuthPort;
+
+    @Value("${app.security.session-clear-on-restart:false}")
+    private boolean sessionClearOnRestart = false;
+
+    private final Instant serverBootTime = Instant.now();
 
     public AuthSessionMaintenanceService(
             TaiKhoanRepository taiKhoanRepository,
@@ -82,6 +88,11 @@ public class AuthSessionMaintenanceService {
 
         if (phien.isDaThuHoi()) {
             throw new UnauthenticatedSessionException();
+        }
+
+        // Khi cấu hình session-clear-on-restart bật: từ chối các phiên tạo trước thời điểm server khởi động lại (buộc đăng nhập lại)
+        if (sessionClearOnRestart && phien.getTaoLuc() != null && phien.getTaoLuc().isBefore(serverBootTime)) {
+            throw new UnauthenticatedSessionException("Phiên đăng nhập đã kết thúc do backend vừa khởi động lại.");
         }
 
         TaiKhoan taiKhoan = docTaiKhoanTuKhoChinh(phien.getTaiKhoanId())
@@ -293,5 +304,13 @@ public class AuthSessionMaintenanceService {
                     ex
             );
         }
+    }
+
+    public boolean isSessionClearOnRestart() {
+        return sessionClearOnRestart;
+    }
+
+    public void setSessionClearOnRestart(boolean sessionClearOnRestart) {
+        this.sessionClearOnRestart = sessionClearOnRestart;
     }
 }

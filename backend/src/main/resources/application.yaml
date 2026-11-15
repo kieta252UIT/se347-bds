@@ -57,6 +57,7 @@ app:
     cookie-secure: ${COOKIE_SECURE:true}
     session-cookie-name: ${SESSION_COOKIE_NAME:__Host-se214_session}
     session-persistent: ${SESSION_PERSISTENT:false}
+    session-clear-on-restart: ${CLEAR_SESSIONS_ON_RESTART:false}
     session-max-age-seconds: ${SESSION_MAX_AGE_SECONDS:31536000}
     csrf-cookie-name: ${CSRF_COOKIE_NAME:__Host-se214_csrf}
 
