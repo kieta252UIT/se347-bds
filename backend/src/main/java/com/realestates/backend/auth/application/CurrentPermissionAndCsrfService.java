@@ -222,6 +222,10 @@ public class CurrentPermissionAndCsrfService {
             throw new UnauthenticatedSessionException();
         }
 
+        if (sessionMaintenanceService != null) {
+            return sessionMaintenanceService.duyTriVaKiemTraPhien(rawCookie);
+        }
+
         String maCookieBam = sessionLifecyclePort.hashSessionCookie(rawCookie);
         PhienXacThuc phien = docPhienTuKhoChinh(maCookieBam)
                 .orElseThrow(UnauthenticatedSessionException::new);
