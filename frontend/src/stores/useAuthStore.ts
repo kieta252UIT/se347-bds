@@ -41,8 +41,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
   checkSession: async () => {
     try {
       set({ isLoading: true });
-      // Thử lấy thông tin người dùng từ cookie phiên hiện tại
-      const response = await api.get<UserProfile>("/auth/me");
+      // Thử lấy thông tin người dùng từ cookie phiên hiện tại (GET /api/me theo openapi-sprint-1.yaml)
+      const response = await api.get<UserProfile>("/me");
       if (response.data) {
         set({
           user: response.data,

@@ -74,7 +74,8 @@ export interface GuiEmailKetQua {
 }
 
 export interface XacMinhKetQua {
-  thanhCong: boolean;
+  trangThai?: string;
+  thanhCong?: boolean;
   thongDiep: string;
   csrfToken?: string;
   canDangNhapLai?: boolean;
@@ -82,5 +83,10 @@ export interface XacMinhKetQua {
 
 export interface DangNhapKetQua {
   taiKhoan: UserProfile;
+  csrfToken?: string;
+}
+
+export interface DangXuatKetQua {
+  trangThai: string;
   csrfToken?: string;
 }

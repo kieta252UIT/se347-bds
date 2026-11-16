@@ -50,8 +50,9 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
   // Bước 2: Xác nhận OTP + đặt lại mật khẩu
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp.trim()) {
-      setMessage({ type: "error", text: "Vui lòng nhập mã OTP đã được gửi về email." });
+    const trimmedOtp = otp.trim();
+    if (!/^\d{6}$/.test(trimmedOtp)) {
+      setMessage({ type: "error", text: "Vui lòng nhập mã OTP hợp lệ gồm đúng 6 chữ số (0-9)." });
       return;
     }
     if (!isValidNewPassword) {
@@ -63,7 +64,7 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
       setMessage(null);
       await authService.resetPassword({
         email: email.trim().toLowerCase(),
-        otp: otp.trim(),
+        otp: trimmedOtp,
         matKhauMoi: newPassword,
       });
       setMessage({
@@ -211,14 +212,14 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
               <label
                 style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#334155", marginBottom: "0.4rem" }}
               >
-                Mã OTP (8 chữ số)
+                Mã OTP (6 chữ số)
               </label>
               <input
                 type="text"
                 inputMode="numeric"
-                maxLength={8}
+                maxLength={6}
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="123456"
                 required
                 autoFocus

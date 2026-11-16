@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate } from "react-router";
 import { authApi } from "@/lib/auth";
 import {
   LockIcon,
@@ -31,7 +31,6 @@ export function RegisterPage({ onSwitchToLogin }: RegistrationProps) {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
-  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -91,20 +90,15 @@ export function RegisterPage({ onSwitchToLogin }: RegistrationProps) {
       setMessage(null);
 
       // Đăng ký qua backend proxy (POST /api/auth/register). Backend gán vai trò người dùng (nguoi_dung).
-      const response = await authApi.register(
+      await authApi.register(
         formData.fullName,
         formData.mainEmail,
         password,
         formData.mainPhone || undefined
       );
 
-      setRegisteredEmail(formData.mainEmail);
-      setMessage({
-        type: "success",
-        text:
-          response.result?.thongDiep ||
-          "Đăng ký tài khoản thành công! Chúng tôi đã gửi email kích hoạt tới địa chỉ của bạn.",
-      });
+      // Tự động chuyển hướng ngay sang màn hình xác minh email kèm địa chỉ email vừa đăng ký
+      navigate(`/xac-minh-email?email=${encodeURIComponent(formData.mainEmail.trim().toLowerCase())}`);
     } catch (err: unknown) {
       const errObj = err as { message?: string; thongDiep?: string };
       setMessage({
@@ -186,16 +180,6 @@ export function RegisterPage({ onSwitchToLogin }: RegistrationProps) {
               </svg>
               <div style={{ flex: 1 }}>
                 <span>{message.text}</span>
-                {message.type === "success" && registeredEmail && (
-                  <div style={{ marginTop: "8px" }}>
-                    <Link
-                      to={`/xac-minh-email?email=${encodeURIComponent(registeredEmail)}`}
-                      style={{ color: "#065f46", fontWeight: 700, textDecoration: "underline" }}
-                    >
-                      Chuyển sang màn hình xác minh email →
-                    </Link>
-                  </div>
-                )}
               </div>
             </div>
           )}

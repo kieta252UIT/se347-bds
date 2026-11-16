@@ -51,10 +51,14 @@ export const authApi = {
   },
 
   /**
-   * Xác minh email hoàn tất
+   * Xác minh email hoàn tất (hỗ trợ cả mã OTP 6 chữ số hoặc liên kết tokenHash)
    */
   async verifyEmail(tokenHash?: string, otp?: string, email?: string): Promise<XacMinhKetQua> {
-    return authService.verifyEmail({ tokenHash, otp, email });
+    return authService.verifyEmail({
+      ...(tokenHash ? { tokenHash: tokenHash.trim() } : {}),
+      ...(otp ? { otp: otp.trim() } : {}),
+      ...(email ? { email: email.trim().toLowerCase() } : {}),
+    });
   },
 
   /**
