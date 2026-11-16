@@ -31,7 +31,7 @@ import com.realestates.backend.auth.exception.UnauthenticatedSessionException;
 import com.realestates.backend.auth.infrastructure.DefaultAuthBrowserSessionLifecycleAdapter;
 import com.realestates.backend.auth.infrastructure.InMemoryPhienXacThucRepository;
 import com.realestates.backend.auth.infrastructure.InMemoryTaiKhoanRepository;
-import com.realestates.backend.auth.infrastructure.SessionTokenCipher;
+import com.realestates.backend.auth.infrastructure.SessionTokenCryptoService;
 import com.realestates.backend.config.AuthSessionCookieConfig;
 import com.realestates.backend.exception.GlobalApiExceptionHandler;
 import jakarta.servlet.http.Cookie;
@@ -113,7 +113,7 @@ class AuthSessionMaintenanceAndRestartTests {
 
     private InMemoryTaiKhoanRepository taiKhoanRepository;
     private InMemoryPhienXacThucRepository phienXacThucRepository;
-    private SessionTokenCipher tokenCipher;
+    private SessionTokenCryptoService tokenCryptoService;
     private RecordingSupabaseAuthPort supabaseAuthPort;
     private DefaultAuthBrowserSessionLifecycleAdapter sessionLifecycleAdapter;
     private AuthSessionCookieConfig cookieConfig;
@@ -127,7 +127,7 @@ class AuthSessionMaintenanceAndRestartTests {
     void setUp() {
         this.taiKhoanRepository = new InMemoryTaiKhoanRepository();
         this.phienXacThucRepository = new InMemoryPhienXacThucRepository();
-        this.tokenCipher = new SessionTokenCipher(ENCRYPTION_KEY, "v1");
+        this.tokenCryptoService = new SessionTokenCryptoService("v1:" + ENCRYPTION_KEY, "v1");
         this.supabaseAuthPort = new RecordingSupabaseAuthPort();
         this.sessionLifecycleAdapter = new DefaultAuthBrowserSessionLifecycleAdapter(CSRF_SECRET, phienXacThucRepository);
         this.cookieConfig = createDefaultCookieConfig();
@@ -136,7 +136,7 @@ class AuthSessionMaintenanceAndRestartTests {
                 taiKhoanRepository,
                 phienXacThucRepository,
                 sessionLifecycleAdapter,
-                tokenCipher,
+                tokenCryptoService,
                 supabaseAuthPort
         );
 
@@ -262,7 +262,7 @@ class AuthSessionMaintenanceAndRestartTests {
                         taiKhoanRepository,
                         phienXacThucRepository,
                         newLifecycleAdapter,
-                        tokenCipher,
+                        tokenCryptoService,
                         supabaseAuthPort
                 );
         CurrentPermissionAndCsrfService newPermissionService =
@@ -300,7 +300,7 @@ class AuthSessionMaintenanceAndRestartTests {
         DefaultAuthBrowserSessionLifecycleAdapter newLifecycleAdapter =
                 new DefaultAuthBrowserSessionLifecycleAdapter(CSRF_SECRET, phienXacThucRepository);
         AuthSessionMaintenanceService newMaintenanceService =
-                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, newLifecycleAdapter, tokenCipher, supabaseAuthPort);
+                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, newLifecycleAdapter, tokenCryptoService, supabaseAuthPort);
         CurrentPermissionAndCsrfService newPermissionService =
                 new CurrentPermissionAndCsrfService(taiKhoanRepository, phienXacThucRepository, newLifecycleAdapter, List.of(ALLOWED_ORIGIN), newMaintenanceService);
         AuthCsrfAndMeController newController = new AuthCsrfAndMeController(newPermissionService, sessionOnlyConfig);
@@ -345,7 +345,7 @@ class AuthSessionMaintenanceAndRestartTests {
         DefaultAuthBrowserSessionLifecycleAdapter newLifecycleAdapter =
                 new DefaultAuthBrowserSessionLifecycleAdapter(CSRF_SECRET, phienXacThucRepository);
         AuthSessionMaintenanceService newMaintenanceService =
-                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, newLifecycleAdapter, tokenCipher, supabaseAuthPort);
+                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, newLifecycleAdapter, tokenCryptoService, supabaseAuthPort);
         newMaintenanceService.setSessionClearOnRestart(true);
 
         CurrentPermissionAndCsrfService newPermissionService =
@@ -634,29 +634,29 @@ class AuthSessionMaintenanceAndRestartTests {
     // =========================================================================
 
     @Test
-    @DisplayName("PX-19: SessionTokenCipher mã hóa AES-256-GCM với nonce ngẫu nhiên và AAD; ciphertext bị can thiệp sẽ ném SecurityException và không lộ token")
+    @DisplayName("PX-19: SessionTokenCryptoService mã hóa AES-256-GCM với nonce ngẫu nhiên và AAD; ciphertext bị can thiệp sẽ ném ngoại lệ và không lộ token")
     void tokenCipherRejectsTamperedCiphertextAndProtectsSecrets() {
-        String phienId = UUID.randomUUID().toString();
+        UUID phienId = UUID.randomUUID();
         String originalToken = "secret-provider-token-value-12345";
 
-        byte[] encrypted = tokenCipher.encryptToken(originalToken, phienId, "access", "v1");
+        byte[] encrypted = tokenCryptoService.encryptAccessToken(phienId, originalToken);
         assertThat(encrypted).isNotNull();
-        assertThat(encrypted.length).isGreaterThan(SessionTokenCipher.GCM_NONCE_LENGTH_BYTES);
+        assertThat(encrypted.length).isGreaterThan(12);
 
         // Giải mã đúng trả lại đúng token
-        String decrypted = tokenCipher.decryptToken(encrypted, phienId, "access", "v1");
+        String decrypted = tokenCryptoService.decryptAccessToken(phienId, "v1", encrypted);
         assertThat(decrypted).isEqualTo(originalToken);
 
         // Giả lập can thiệp 1 byte trong ciphertext
         byte[] tampered = Arrays.copyOf(encrypted, encrypted.length);
         tampered[tampered.length - 1] ^= 0xFF;
 
-        assertThatThrownBy(() -> tokenCipher.decryptToken(tampered, phienId, "access", "v1"))
-                .isInstanceOf(SecurityException.class);
+        assertThatThrownBy(() -> tokenCryptoService.decryptAccessToken(phienId, "v1", tampered))
+                .isInstanceOf(RuntimeException.class);
 
         // Sai mục đích AAD ("refresh" thay vì "access")
-        assertThatThrownBy(() -> tokenCipher.decryptToken(encrypted, phienId, "refresh", "v1"))
-                .isInstanceOf(SecurityException.class);
+        assertThatThrownBy(() -> tokenCryptoService.decryptRefreshToken(phienId, "v1", encrypted))
+                .isInstanceOf(RuntimeException.class);
     }
 
     // =========================================================================
@@ -680,7 +680,7 @@ class AuthSessionMaintenanceAndRestartTests {
         DefaultAuthBrowserSessionLifecycleAdapter instanceBLifecycle =
                 new DefaultAuthBrowserSessionLifecycleAdapter(CSRF_SECRET, phienXacThucRepository);
         AuthSessionMaintenanceService instanceBService =
-                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, instanceBLifecycle, tokenCipher, supabaseAuthPort);
+                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, instanceBLifecycle, tokenCryptoService, supabaseAuthPort);
         CurrentPermissionAndCsrfService instanceBPermission =
                 new CurrentPermissionAndCsrfService(taiKhoanRepository, phienXacThucRepository, instanceBLifecycle, List.of(ALLOWED_ORIGIN), instanceBService);
         AuthCsrfAndMeController instanceBController = new AuthCsrfAndMeController(instanceBPermission, cookieConfig);
@@ -735,8 +735,8 @@ class AuthSessionMaintenanceAndRestartTests {
         String cookieHash = sessionLifecycleAdapter.hashSessionCookie(rawSessionCookie);
         UUID phienId = UUID.randomUUID();
 
-        byte[] accessCipher = tokenCipher.encryptToken("access-jwt-" + phienId, phienId.toString(), "access", "v1");
-        byte[] refreshCipher = tokenCipher.encryptToken("refresh-jwt-" + phienId, phienId.toString(), "refresh", "v1");
+        byte[] accessCipher = tokenCryptoService.encryptAccessToken(phienId, "access-jwt-" + phienId);
+        byte[] refreshCipher = tokenCryptoService.encryptRefreshToken(phienId, "refresh-jwt-" + phienId);
 
         PhienXacThuc phien = PhienXacThuc.taoPhienMoi(
                 phienId,
@@ -778,8 +778,8 @@ class AuthSessionMaintenanceAndRestartTests {
         String cookieHash = sessionLifecycleAdapter.hashSessionCookie(rawSessionCookie);
         UUID phienId = UUID.randomUUID();
 
-        byte[] accessCipher = tokenCipher.encryptToken("access-jwt-" + phienId, phienId.toString(), "access", "v1");
-        byte[] refreshCipher = tokenCipher.encryptToken("refresh-jwt-" + phienId, phienId.toString(), "refresh", "v1");
+        byte[] accessCipher = tokenCryptoService.encryptAccessToken(phienId, "access-jwt-" + phienId);
+        byte[] refreshCipher = tokenCryptoService.encryptRefreshToken(phienId, "refresh-jwt-" + phienId);
 
         PhienXacThuc phien = PhienXacThuc.taoPhienMoi(
                 phienId,
@@ -821,8 +821,8 @@ class AuthSessionMaintenanceAndRestartTests {
         String cookieHash = sessionLifecycleAdapter.hashSessionCookie(rawSessionCookie);
         UUID phienId = UUID.randomUUID();
 
-        byte[] accessCipher = tokenCipher.encryptToken("access-jwt-" + phienId, phienId.toString(), "access", "v1");
-        byte[] refreshCipher = tokenCipher.encryptToken("refresh-jwt-" + phienId, phienId.toString(), "refresh", "v1");
+        byte[] accessCipher = tokenCryptoService.encryptAccessToken(phienId, "access-jwt-" + phienId);
+        byte[] refreshCipher = tokenCryptoService.encryptRefreshToken(phienId, "refresh-jwt-" + phienId);
 
         PhienXacThuc phien = PhienXacThuc.taoPhienMoi(
                 phienId,

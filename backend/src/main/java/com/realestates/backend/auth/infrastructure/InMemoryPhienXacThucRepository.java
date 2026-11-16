@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Repository;
  * cũng như giao dịch nguyên tử khi thay thế phiên trên cùng trình duyệt (PHIEN-02, PHIEN-04).
  */
 @Repository
+@ConditionalOnProperty(name = "app.repository.type", havingValue = "in-memory", matchIfMissing = true)
 public class InMemoryPhienXacThucRepository implements PhienXacThucRepository {
 
     private final Map<UUID, PhienXacThuc> sessionsById = new ConcurrentHashMap<>();

@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Repository;
  * trên email định danh (lower(email)) và supabase_auth_user_id theo AUTH-01 & TS1-007.
  */
 @Repository
+@ConditionalOnProperty(name = "app.repository.type", havingValue = "in-memory", matchIfMissing = true)
 public class InMemoryTaiKhoanRepository implements TaiKhoanRepository {
 
     private final ConcurrentMap<UUID, TaiKhoan> accountsById = new ConcurrentHashMap<>();
