@@ -36,15 +36,12 @@ spring:
 
 server:
   port: ${PORT:8080}
-  # Tin cay header X-Forwarded-Proto, X-Forwarded-For, X-Forwarded-Host tu Nginx/Caddy Reverse Proxy
+  # Trust proxy: Tin cậy các header X-Forwarded-Proto, X-Forwarded-For từ Nginx Reverse Proxy
   forward-headers-strategy: framework
-  error:
-    whitelabel:
-      enabled: false
   servlet:
     session:
       cookie:
-        name: ${SESSION_COOKIE_NAME:__Host-se214_session}
+        name: SESSION
         http-only: true
         secure: ${COOKIE_SECURE:true}
         same-site: lax
@@ -56,6 +53,8 @@ app:
     allowed-origins: ${FRONTEND_ORIGIN:https://localhost,http://localhost:5173}
     cookie-secure: ${COOKIE_SECURE:true}
     session-cookie-name: ${SESSION_COOKIE_NAME:__Host-se214_session}
+    session-persistent: ${SESSION_PERSISTENT:true}
+    session-clear-on-restart: ${CLEAR_SESSIONS_ON_RESTART:false}
     session-max-age-seconds: ${SESSION_MAX_AGE_SECONDS:31536000}
     csrf-cookie-name: ${CSRF_COOKIE_NAME:__Host-se214_csrf}
 

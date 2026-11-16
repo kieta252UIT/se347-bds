@@ -21,6 +21,9 @@ public class AuthSessionCookieConfig {
     @Value("${app.security.session-cookie-name:__Host-se214_session}")
     private String sessionCookieName;
 
+    @Value("${app.security.session-persistent:true}")
+    private boolean sessionPersistent = true;
+
     @Value("${app.security.session-max-age-seconds:31536000}")
     private long sessionMaxAgeSeconds;
 
@@ -35,23 +38,50 @@ public class AuthSessionCookieConfig {
             sessionCookieConfig.setHttpOnly(true);
             sessionCookieConfig.setSecure(cookieSecure);
             sessionCookieConfig.setPath("/");
-            sessionCookieConfig.setMaxAge((int) sessionMaxAgeSeconds);
+            if (sessionPersistent && sessionMaxAgeSeconds > 0) {
+                sessionCookieConfig.setMaxAge((int) sessionMaxAgeSeconds);
+            } else {
+                sessionCookieConfig.setMaxAge(-1); // Session cookie (xóa khi đóng trình duyệt)
+            }
             sessionCookieConfig.setAttribute("SameSite", "Lax");
         };
     }
 
     public ResponseCookie createSessionCookie(String value) {
+        if (!sessionPersistent || sessionMaxAgeSeconds <= 0) {
+            return createBrowserSessionCookie(value);
+        }
         return createSessionCookie(sessionCookieName, value, sessionMaxAgeSeconds);
     }
 
-    public ResponseCookie createSessionCookie(String name, String value, long maxAgeSeconds) {
-        return ResponseCookie.from(name, value)
+    public ResponseCookie createPersistentSessionCookie(String value) {
+        return createSessionCookie(sessionCookieName, value, sessionMaxAgeSeconds);
+    }
+
+    /**
+     * Tạo cookie phiên trình duyệt (Session Cookie không có Max-Age):
+     * - Khi người dùng đóng tab/đóng web và mở lại thì vẫn duy trì đăng nhập trong phiên duyệt web đó.
+     * - Khi đóng hẳn trình duyệt (exit browser process), trình duyệt sẽ xóa cookie khỏi RAM và buộc đăng nhập lại.
+     */
+    public ResponseCookie createBrowserSessionCookie(String value) {
+        return ResponseCookie.from(sessionCookieName, value)
                 .httpOnly(true)
                 .secure(cookieSecure)
                 .sameSite("Lax")
                 .path("/")
-                .maxAge(maxAgeSeconds)
                 .build();
+    }
+
+    public ResponseCookie createSessionCookie(String name, String value, long maxAgeSeconds) {
+        var builder = ResponseCookie.from(name, value)
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .sameSite("Lax")
+                .path("/");
+        if (maxAgeSeconds >= 0) {
+            builder.maxAge(maxAgeSeconds);
+        }
+        return builder.build();
     }
 
     public ResponseCookie clearSessionCookie() {
@@ -87,5 +117,13 @@ public class AuthSessionCookieConfig {
 
     public boolean isCookieSecure() {
         return cookieSecure;
+    }
+
+    public boolean isSessionPersistent() {
+        return sessionPersistent;
+    }
+
+    public void setSessionPersistent(boolean sessionPersistent) {
+        this.sessionPersistent = sessionPersistent;
     }
 }

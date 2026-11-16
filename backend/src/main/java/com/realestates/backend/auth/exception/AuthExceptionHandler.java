@@ -1,7 +1,7 @@
 package com.realestates.backend.auth.exception;
 
 import com.realestates.backend.auth.application.AuthRegistrationService;
-import com.realestates.backend.auth.controller.AuthRegistrationController;
+import com.realestates.backend.auth.dto.FieldErrorItem;
 import com.realestates.backend.auth.dto.LoiApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -18,12 +18,54 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * Bộ xử lý ngoại lệ tập trung cho luồng đăng ký Auth, chuẩn hóa phản hồi theo schema LoiApi
- * (api-specification-sprint-1.md §3.4 & §8.9).
+ * Bộ xử lý ngoại lệ tập trung cho toàn bộ luồng Auth, phiên xác thực, phân quyền và bảo vệ CSRF
+ * chuẩn hóa phản hồi theo schema LoiApi (api-specification-sprint-1.md §3.4 & §8.9).
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = AuthRegistrationController.class)
+@RestControllerAdvice
 public class AuthExceptionHandler {
+
+    @ExceptionHandler(UnauthenticatedSessionException.class)
+    public ResponseEntity<LoiApiResponse> handleUnauthenticatedSession(
+            UnauthenticatedSessionException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InsufficientPermissionException.class)
+    public ResponseEntity<LoiApiResponse> handleInsufficientPermission(
+            InsufficientPermissionException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.FORBIDDEN,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidCsrfException.class)
+    public ResponseEntity<LoiApiResponse> handleInvalidCsrf(
+            InvalidCsrfException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.FORBIDDEN,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
 
     @ExceptionHandler(AuthValidationException.class)
     public ResponseEntity<LoiApiResponse> handleValidationException(
@@ -35,6 +77,76 @@ public class AuthExceptionHandler {
                 ex.getMaLoi(),
                 ex.getMessage(),
                 ex.getTruongLoi(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidVerificationLinkException.class)
+    public ResponseEntity<LoiApiResponse> handleInvalidVerificationLink(
+            InvalidVerificationLinkException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<LoiApiResponse> handleInvalidCredentials(
+            InvalidCredentialsException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.UNAUTHORIZED,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<LoiApiResponse> handleEmailNotVerified(
+            EmailNotVerifiedException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.FORBIDDEN,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<LoiApiResponse> handleAccountLocked(
+            AccountLockedException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.FORBIDDEN,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(AuthSyncInProgressException.class)
+    public ResponseEntity<LoiApiResponse> handleAuthSyncInProgress(
+            AuthSyncInProgressException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.CONFLICT,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
                 request
         );
     }
@@ -53,13 +165,49 @@ public class AuthExceptionHandler {
         );
     }
 
+    @ExceptionHandler(AuthProfileNeedsInspectionException.class)
+    public ResponseEntity<LoiApiResponse> handleProfileNeedsInspection(
+            AuthProfileNeedsInspectionException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.CONFLICT,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
     @ExceptionHandler(AuthRateLimitExceededException.class)
     public ResponseEntity<LoiApiResponse> handleRateLimitExceeded(
             AuthRateLimitExceededException ex,
             HttpServletRequest request
     ) {
-        return buildErrorResponse(
+        ResponseEntity<LoiApiResponse> baseResponse = buildErrorResponse(
                 HttpStatus.TOO_MANY_REQUESTS,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+        if (ex.getRetryAfterSeconds() == null) {
+            return baseResponse;
+        }
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.VARY, HttpHeaders.COOKIE)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(baseResponse.getBody());
+    }
+
+    @ExceptionHandler(VerificationSyncIncompleteException.class)
+    public ResponseEntity<LoiApiResponse> handleVerificationSyncIncomplete(
+            VerificationSyncIncompleteException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.SERVICE_UNAVAILABLE,
                 ex.getMaLoi(),
                 ex.getMessage(),
                 List.of(),
@@ -109,11 +257,11 @@ public class AuthExceptionHandler {
         );
     }
 
-    private ResponseEntity<LoiApiResponse> buildErrorResponse(
+    public static ResponseEntity<LoiApiResponse> buildErrorResponse(
             HttpStatus status,
             String maLoi,
             String thongDiep,
-            List<com.realestates.backend.auth.dto.FieldErrorItem> truongLoi,
+            List<FieldErrorItem> truongLoi,
             HttpServletRequest request
     ) {
         String traceId = resolveTraceId(request);
@@ -124,12 +272,13 @@ public class AuthExceptionHandler {
                 traceId
         );
         return ResponseEntity.status(status)
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.VARY, HttpHeaders.COOKIE)
                 .body(body);
     }
 
-    private static String resolveTraceId(HttpServletRequest request) {
+    public static String resolveTraceId(HttpServletRequest request) {
         if (request != null) {
             String headerTrace = request.getHeader("X-Request-Id");
             if (headerTrace != null && !headerTrace.isBlank()) {

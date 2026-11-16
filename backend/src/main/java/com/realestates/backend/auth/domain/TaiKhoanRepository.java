@@ -9,6 +9,10 @@ import java.util.UUID;
 public interface TaiKhoanRepository {
     boolean existsByEmail(String normalizedEmail);
 
+    default Optional<TaiKhoan> findById(UUID id) {
+        return Optional.empty();
+    }
+
     Optional<TaiKhoan> findByEmail(String normalizedEmail);
 
     Optional<TaiKhoan> findBySupabaseAuthUserId(UUID supabaseAuthUserId);

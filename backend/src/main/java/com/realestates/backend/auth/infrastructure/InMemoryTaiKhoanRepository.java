@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -15,8 +16,10 @@ import org.springframework.stereotype.Repository;
  * trên email định danh (lower(email)) và supabase_auth_user_id theo AUTH-01 & TS1-007.
  */
 @Repository
+@ConditionalOnProperty(name = "app.repository.type", havingValue = "in-memory", matchIfMissing = true)
 public class InMemoryTaiKhoanRepository implements TaiKhoanRepository {
 
+    private final ConcurrentMap<UUID, TaiKhoan> accountsById = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, TaiKhoan> accountsByEmail = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, TaiKhoan> accountsBySupabaseId = new ConcurrentHashMap<>();
 
@@ -26,6 +29,14 @@ public class InMemoryTaiKhoanRepository implements TaiKhoanRepository {
             return false;
         }
         return accountsByEmail.containsKey(normalizeKey(normalizedEmail));
+    }
+
+    @Override
+    public Optional<TaiKhoan> findById(UUID id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(accountsById.get(id));
     }
 
     @Override
@@ -55,12 +66,24 @@ public class InMemoryTaiKhoanRepository implements TaiKhoanRepository {
         if (existingBySupabaseId != null && !existingBySupabaseId.getId().equals(taiKhoan.getId())) {
             throw new EmailAlreadyExistsException();
         }
+        TaiKhoan previousById = accountsById.get(taiKhoan.getId());
+        if (previousById != null) {
+            String previousEmailKey = normalizeKey(previousById.getEmail());
+            if (!previousEmailKey.equals(emailKey)) {
+                accountsByEmail.remove(previousEmailKey, previousById);
+            }
+            if (!previousById.getSupabaseAuthUserId().equals(taiKhoan.getSupabaseAuthUserId())) {
+                accountsBySupabaseId.remove(previousById.getSupabaseAuthUserId(), previousById);
+            }
+        }
+        accountsById.put(taiKhoan.getId(), taiKhoan);
         accountsByEmail.put(emailKey, taiKhoan);
         accountsBySupabaseId.put(taiKhoan.getSupabaseAuthUserId(), taiKhoan);
         return taiKhoan;
     }
 
     public synchronized void clear() {
+        accountsById.clear();
         accountsByEmail.clear();
         accountsBySupabaseId.clear();
     }
