@@ -12,6 +12,7 @@ import com.realestates.backend.auth.exception.EmailAlreadyExistsException;
 import com.realestates.backend.auth.exception.EmailNotVerifiedException;
 import com.realestates.backend.auth.exception.InvalidCredentialsException;
 import com.realestates.backend.auth.exception.InvalidVerificationLinkException;
+import com.realestates.backend.auth.exception.PasswordPolicyViolationException;
 import com.realestates.backend.auth.exception.UnauthenticatedSessionException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -34,10 +35,6 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
-/**
- * Adapter giao tiếp với Supabase Auth (GoTrue HTTP API) phục vụ đăng ký tài khoản,
- * xác minh email, đăng nhập, làm mới token và thu hồi phiên.
- */
 @Component
 public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
 
@@ -90,7 +87,6 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
         if (normalizedSoDienThoai != null && !normalizedSoDienThoai.isBlank()) {
             userMetadata.put("so_dien_thoai", normalizedSoDienThoai);
         }
-        // Cố định vai trò Người dùng ("nguoi_dung")
         userMetadata.put("vai_tro", VaiTroTaiKhoan.NGUOI_DUNG.getGiaTri());
 
         if (!isBlank(serviceRoleKey)) {
@@ -133,7 +129,6 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
 
     @Override
     public SupabaseVerifiedIdentity verifySignupEmailTokenHash(String tokenHash) {
-        // Cố định mục đích type = "signup" theo AUTH-15 & api-specification §8.5; tuyệt đối không dùng "email"
         Map<String, Object> verifyBody = Map.of(
                 "type", "signup",
                 "token_hash", tokenHash
@@ -218,7 +213,6 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
                 }
             }
         } catch (Exception ignored) {
-            // Nếu không tra cứu được danh sách admin thì trả empty
         }
         return java.util.Optional.empty();
     }
@@ -238,7 +232,6 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
                     .retrieve()
                     .toBodilessEntity();
         } catch (Exception ignored) {
-            // Bỏ qua lỗi khi xóa bù trừ để giữ nguyên ngoại lệ gốc
         }
     }
 
@@ -376,6 +369,178 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
         } catch (RestClientException ex) {
             throw new AuthProviderUnavailableException("Lỗi kết nối khi thu hồi phiên trên Supabase Auth.", ex);
         }
+    }
+
+    @Override
+    public void sendPasswordRecoveryEmail(String normalizedEmail) {
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String apiKey = !isBlank(properties.getAnonKey())
+                ? properties.getAnonKey().trim()
+                : (!isBlank(properties.getServiceRoleKey()) ? properties.getServiceRoleKey().trim() : "");
+
+        if (baseUrl.isBlank() || apiKey.isBlank()) {
+            throw new AuthProviderUnavailableException();
+        }
+
+        Map<String, Object> body = Map.of(
+                "email", normalizedEmail.trim().toLowerCase(Locale.ROOT)
+        );
+
+        try {
+            restClient.post()
+                    .uri(baseUrl + "/auth/v1/recover")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .header("apikey", apiKey)
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            int statusCode = ex.getStatusCode().value();
+            if (statusCode == 429) {
+                throw new AuthRateLimitExceededException();
+            }
+            if (statusCode >= 500) {
+                throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+            }
+            // Supabase trả phản hồi trung tính cho recover request
+        } catch (RestClientException ex) {
+            throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        }
+    }
+
+    @Override
+    public SupabaseVerifiedIdentity verifyPasswordRecoveryTokenHash(String tokenHash) {
+        Map<String, Object> verifyBody = Map.of(
+                "type", "recovery",
+                "token_hash", tokenHash
+        );
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String apiKey = !isBlank(properties.getAnonKey())
+                ? properties.getAnonKey().trim()
+                : (!isBlank(properties.getServiceRoleKey()) ? properties.getServiceRoleKey().trim() : "");
+
+        if (baseUrl.isBlank() || apiKey.isBlank()) {
+            throw new AuthProviderUnavailableException();
+        }
+
+        Map<String, Object> response;
+        try {
+            response = restClient.post()
+                    .uri(baseUrl + "/auth/v1/verify")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .header("apikey", apiKey)
+                    .body(verifyBody)
+                    .retrieve()
+                    .body(MAP_TYPE);
+        } catch (RestClientResponseException ex) {
+            throw mapSupabaseRecoveryVerifyHttpError(ex);
+        } catch (RestClientException ex) {
+            throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        }
+
+        SupabaseVerifiedIdentity verifiedIdentity = extractVerifiedIdentity(response);
+        String callbackAccessToken = extractAccessTokenIfPresent(response);
+        if (callbackAccessToken != null && !callbackAccessToken.isBlank()) {
+            revokeCallbackSessionBestEffort(baseUrl, apiKey, callbackAccessToken.trim());
+        }
+
+        return verifiedIdentity;
+    }
+
+    @Override
+    public void updatePasswordWithResetMarker(UUID supabaseAuthUserId, String rawPassword, UUID operationId) {
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String serviceRoleKey = properties.getServiceRoleKey();
+
+        if (baseUrl.isBlank() || isBlank(serviceRoleKey)) {
+            throw new AuthProviderUnavailableException();
+        }
+
+        Map<String, Object> appMetadata = new LinkedHashMap<>();
+        appMetadata.put("se214_password_reset_operation", operationId.toString());
+
+        Map<String, Object> updateBody = new LinkedHashMap<>();
+        updateBody.put("password", rawPassword);
+        updateBody.put("app_metadata", appMetadata);
+
+        try {
+            restClient.put()
+                    .uri(baseUrl + "/auth/v1/admin/users/{userId}", supabaseAuthUserId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .header("apikey", serviceRoleKey.trim())
+                    .header("Authorization", "Bearer " + serviceRoleKey.trim())
+                    .body(updateBody)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            int statusCode = ex.getStatusCode().value();
+            if (statusCode == 429) {
+                throw new AuthRateLimitExceededException();
+            }
+            if (statusCode == 400 || statusCode == 422) {
+                // Provider từ chối do mật khẩu không đạt chính sách
+                throw new PasswordPolicyViolationException();
+            }
+            throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        } catch (RestClientException ex) {
+            throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        }
+    }
+
+    @Override
+    public java.util.Optional<String> getPasswordResetMarker(UUID supabaseAuthUserId) {
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String serviceRoleKey = properties.getServiceRoleKey();
+
+        if (baseUrl.isBlank() || isBlank(serviceRoleKey)) {
+            throw new AuthProviderUnavailableException();
+        }
+
+        Map<String, Object> response;
+        try {
+            response = restClient.get()
+                    .uri(baseUrl + "/auth/v1/admin/users/{userId}", supabaseAuthUserId)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .header("apikey", serviceRoleKey.trim())
+                    .header("Authorization", "Bearer " + serviceRoleKey.trim())
+                    .retrieve()
+                    .body(MAP_TYPE);
+        } catch (RestClientResponseException ex) {
+            int statusCode = ex.getStatusCode().value();
+            if (statusCode == 404) {
+                return java.util.Optional.empty();
+            }
+            throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        } catch (RestClientException ex) {
+            throw new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        }
+
+        if (response == null) {
+            return java.util.Optional.empty();
+        }
+
+        Object appMetadataObj = response.get("app_metadata");
+        if (appMetadataObj instanceof Map<?, ?> metaMap) {
+            Object marker = metaMap.get("se214_password_reset_operation");
+            if (marker != null) {
+                return java.util.Optional.of(marker.toString());
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    private RuntimeException mapSupabaseRecoveryVerifyHttpError(RestClientResponseException ex) {
+        int statusCode = ex.getStatusCode().value();
+        if (statusCode == 429) {
+            return new AuthRateLimitExceededException();
+        }
+        if (statusCode >= 500) {
+            return new AuthProviderUnavailableException(AuthProviderUnavailableException.THONG_DIEP_MAC_DINH, ex);
+        }
+        return new InvalidVerificationLinkException("Liên kết recovery không hợp lệ, hết hạn hoặc đã dùng.", ex);
     }
 
     private SupabaseRegisteredUser createUserViaAdminApi(

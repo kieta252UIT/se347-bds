@@ -17,11 +17,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-/**
- * Kho lưu trữ Phiên xác thực bền vững trên PostgreSQL (bảng se214.phien_xac_thuc)
- * theo đặc tả database-design-sprint-1.md §3.2, ADR-0010, ADR-0012, PHIEN-02, PHIEN-08.
- * Đảm bảo dữ liệu phiên và trạng thái thu hồi được duy trì an toàn qua mọi lần khởi động lại backend.
- */
 @Repository
 @ConditionalOnProperty(name = "app.repository.type", havingValue = "postgres")
 public class PostgreSqlPhienXacThucRepository implements PhienXacThucRepository {
@@ -166,6 +161,23 @@ public class PostgreSqlPhienXacThucRepository implements PhienXacThucRepository 
         PhienXacThuc revoked = current.thuHoi(lyDoThuHoi, timestamp, giuLaiCredentialDeThuHoiProvider);
         save(revoked);
         return Optional.of(revoked);
+    }
+
+    @Override
+    public int revokeAllByTaiKhoanId(UUID taiKhoanId, String lyDoThuHoi, Instant now) {
+        if (taiKhoanId == null) {
+            return 0;
+        }
+        Instant timestamp = now != null ? now : Instant.now();
+        String sql = """
+                UPDATE se214.phien_xac_thuc
+                SET thu_hoi_luc = ?,
+                    ly_do_thu_hoi = ?,
+                    can_thu_hoi_provider = false
+                WHERE tai_khoan_id = ?
+                  AND thu_hoi_luc IS NULL
+                """;
+        return jdbcTemplate.update(sql, Timestamp.from(timestamp), lyDoThuHoi, taiKhoanId);
     }
 
     @Override

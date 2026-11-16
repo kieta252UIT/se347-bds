@@ -18,13 +18,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/**
- * Dịch vụ mã hóa / giải mã token provider (access_token, refresh_token) bằng AES-256-GCM
- * theo đặc tả thiet-ke-phien-sprint-1.md §1 (PHIEN-05) và §6:
- * - Thuật toán: AES-256-GCM, nonce ngẫu nhiên 96-bit (12 byte), authentication tag 128-bit.
- * - AAD (Additional Authenticated Data) gắn chặt: phien_xac_thuc.id + loại token ("access"/"refresh") + phien_ban_khoa_ma_hoa.
- * - Hỗ trợ keyring nhiều phiên bản khóa (SESSION_TOKEN_KEYRING, SESSION_TOKEN_ACTIVE_KEY_VERSION) để xoay khóa an toàn.
- */
 @Component
 public class SessionTokenCryptoService {
 
@@ -217,7 +210,6 @@ public class SessionTokenCryptoService {
                 return url;
             }
         } catch (IllegalArgumentException ignored) {
-            // Không phải Base64URL
         }
         return null;
     }

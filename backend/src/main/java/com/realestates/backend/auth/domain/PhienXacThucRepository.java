@@ -5,10 +5,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Cổng lưu trữ thực thể Phiên xác thực (bảng se214.phien_xac_thuc)
- * theo đặc tả database-design-sprint-1.md §3.2 và thiet-ke-phien-sprint-1.md.
- */
 public interface PhienXacThucRepository {
 
     Optional<PhienXacThuc> findById(UUID id);
@@ -21,23 +17,12 @@ public interface PhienXacThucRepository {
 
     PhienXacThuc save(PhienXacThuc phienXacThuc);
 
-    /**
-     * Thực hiện nguyên tử trong cùng một giao dịch lưu trữ:
-     * 1. Nếu có phiên hiện tại ứng với oldMaCookieBam trên trình duyệt này và chưa bị thu hồi,
-     *    thu hồi riêng phiên đó với lý do "thay_phien_dang_nhap" (không ảnh hưởng thiết bị/browser khác).
-     * 2. Lưu bản ghi phiên mới newPhien.
-     *
-     * Trả về phiên cũ đã bị thu hồi (nếu có) để tầng ứng dụng có thể dọn phiên tại provider best-effort.
-     */
     Optional<PhienXacThuc> replaceBrowserSessionAndSaveNew(
             String oldMaCookieBam,
             PhienXacThuc newPhien,
             Instant now
     );
 
-    /**
-     * Thu hồi phiên ứng với maCookieBam theo lý do chỉ định (nếu tồn tại và chưa thu hồi).
-     */
     Optional<PhienXacThuc> revokeByMaCookieBam(
             String maCookieBam,
             String lyDoThuHoi,
@@ -46,16 +31,22 @@ public interface PhienXacThucRepository {
     );
 
     /**
-     * Thử nhận refresh lease 30s cho phiên (PHIEN-08 & TS1-071) dưới khóa nguyên tử.
-     * Trả về Optional<PhienXacThuc> chứa leaseId nếu thành công, hoặc Optional.empty() nếu lease hiện tại của worker khác còn hiệu lực.
+     * Thu hồi toàn bộ các phiên xác thực của một tài khoản theo lý do chỉ định (UC-29 / PHIEN-04 / §5.2).
+     * Phục vụ luồng đặt lại mật khẩu và khóa tài khoản, đảm bảo mọi phiên cũ lập tức mất quyền.
+     *
+     * @param taiKhoanId ID tài khoản
+     * @param lyDoThuHoi Lý do thu hồi (vd: 'dat_lai_mat_khau')
+     * @param now Thời điểm thu hồi
+     * @return Số lượng phiên đã được cập nhật thu hồi
      */
+    default int revokeAllByTaiKhoanId(UUID taiKhoanId, String lyDoThuHoi, Instant now) {
+        return 0;
+    }
+
     default Optional<PhienXacThuc> tryAcquireRefreshLease(UUID phienId, UUID leaseId, Instant leaseUntil, Instant now) {
         return Optional.empty();
     }
 
-    /**
-     * Cập nhật cặp token mã hóa mới sau refresh với CAS version và kiểm tra leaseId còn khớp (PHIEN-08 & TS1-071).
-     */
     default boolean updateRefreshedTokensWithCas(
             UUID phienId,
             UUID expectedLeaseId,
@@ -69,9 +60,6 @@ public interface PhienXacThucRepository {
         return false;
     }
 
-    /**
-     * Giải phóng lease khi lượt refresh kết thúc hoặc hủy (PHIEN-08).
-     */
     default void releaseRefreshLease(UUID phienId, UUID leaseId) {
     }
 }
