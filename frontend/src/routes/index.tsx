@@ -61,6 +61,7 @@ export const router = createBrowserRouter([
       { path: "dang-nhap", element: <LoginPage /> },
       { path: "dang-ky", element: <RegisterPage /> },
       { path: "xac-minh-email", element: <VerifyEmailPage /> },
+      { path: "auth/verify-email", element: <VerifyEmailPage /> },
       { path: "quen-mat-khau", element: <ForgotPasswordPage /> },
     ],
   },
