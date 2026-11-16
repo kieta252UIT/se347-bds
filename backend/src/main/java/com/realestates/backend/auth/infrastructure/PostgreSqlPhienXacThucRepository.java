@@ -32,6 +32,7 @@ public class PostgreSqlPhienXacThucRepository implements PhienXacThucRepository 
         this.jdbcTemplate = new JdbcTemplate(Objects.requireNonNull(dataSource, "dataSource không được null"));
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
     public PostgreSqlPhienXacThucRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate không được null");
     }

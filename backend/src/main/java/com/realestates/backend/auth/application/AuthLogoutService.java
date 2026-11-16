@@ -5,7 +5,7 @@ import com.realestates.backend.auth.domain.PhienXacThucRepository;
 import com.realestates.backend.auth.dto.DangXuatKetQua;
 import com.realestates.backend.auth.exception.AuthProviderUnavailableException;
 import com.realestates.backend.auth.infrastructure.DefaultAuthBrowserSessionLifecycleAdapter;
-import com.realestates.backend.auth.infrastructure.SessionTokenCipher;
+import com.realestates.backend.auth.infrastructure.SessionTokenCryptoService;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -30,19 +30,19 @@ public class AuthLogoutService {
 
     private final PhienXacThucRepository phienXacThucRepository;
     private final AuthBrowserSessionLifecyclePort sessionLifecyclePort;
-    private final SessionTokenCipher sessionTokenCipher;
+    private final SessionTokenCryptoService sessionTokenCryptoService;
     private final SupabaseAuthPort supabaseAuthPort;
 
     @Autowired
     public AuthLogoutService(
             PhienXacThucRepository phienXacThucRepository,
             AuthBrowserSessionLifecyclePort sessionLifecyclePort,
-            SessionTokenCipher sessionTokenCipher,
+            SessionTokenCryptoService sessionTokenCryptoService,
             SupabaseAuthPort supabaseAuthPort
     ) {
         this.phienXacThucRepository = Objects.requireNonNull(phienXacThucRepository, "phienXacThucRepository không được null");
         this.sessionLifecyclePort = Objects.requireNonNull(sessionLifecyclePort, "sessionLifecyclePort không được null");
-        this.sessionTokenCipher = sessionTokenCipher;
+        this.sessionTokenCryptoService = sessionTokenCryptoService;
         this.supabaseAuthPort = supabaseAuthPort;
     }
 
@@ -64,29 +64,26 @@ public class AuthLogoutService {
             String rawCookie = rawSessionCookieValue.trim();
             String maCookieBam = sessionLifecyclePort.hashSessionCookie(rawCookie);
 
-            if (sessionLifecyclePort instanceof DefaultAuthBrowserSessionLifecycleAdapter adapter) {
-                adapter.recordRevokedCookieHash(maCookieBam);
+            Optional<PhienXacThuc> existingOpt;
+            try {
+                existingOpt = phienXacThucRepository.findByMaCookieBam(maCookieBam);
+            } catch (AuthProviderUnavailableException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                throw new AuthProviderUnavailableException(
+                        "Kho lưu trữ phiên gặp sự cố khi tra cứu phiên đăng xuất.",
+                        ex
+                );
             }
 
+            // 1. Thu hồi bền vững phiên tương ứng trong CSDL trước khi dọn dẹp RAM / Supabase.
+            Optional<PhienXacThuc> revokedOpt;
             try {
-                Optional<PhienXacThuc> existingOpt = phienXacThucRepository.findByMaCookieBam(maCookieBam);
-                boolean providerCleanupSuccess = false;
-                if (existingOpt.isPresent() && !existingOpt.get().isDaThuHoi()) {
-                    providerCleanupSuccess = donDepProviderSessionLocal(existingOpt.get());
-                }
-
-                // Thu hồi bền vững phiên tương ứng trong CSDL trước khi xóa cookie.
-                // Theo openapi & thiet-ke-phien §3.2: Nếu provider gặp lỗi/chưa dọn thành công,
-                // giữ can_thu_hoi_provider = true và giữ lại credential để retry nội bộ; nếu đã dọn xong thì xóa sạch credential.
-                boolean retainCredsForRetry = !providerCleanupSuccess
-                        && existingOpt.isPresent()
-                        && existingOpt.get().getAccessTokenMaHoa() != null;
-
-                phienXacThucRepository.revokeByMaCookieBam(
+                revokedOpt = phienXacThucRepository.revokeByMaCookieBam(
                         maCookieBam,
                         PhienXacThuc.LY_DO_DANG_XUAT,
                         Instant.now(),
-                        retainCredsForRetry
+                        existingOpt.isPresent() && existingOpt.get().getAccessTokenMaHoa() != null
                 );
             } catch (AuthProviderUnavailableException ex) {
                 throw ex;
@@ -96,6 +93,23 @@ public class AuthLogoutService {
                         ex
                 );
             }
+
+            // 2. Chỉ ghi nhận vào cache RAM của adapter sau khi DB đã commit thu hồi thành công
+            if (sessionLifecyclePort instanceof DefaultAuthBrowserSessionLifecycleAdapter adapter) {
+                adapter.recordRevokedCookieHash(maCookieBam);
+            }
+
+            // 3. Gọi Supabase Auth thu hồi phiên local (best-effort)
+            if (existingOpt.isPresent() && !existingOpt.get().isDaThuHoi()) {
+                boolean providerCleanupSuccess = donDepProviderSessionLocal(existingOpt.get());
+                if (providerCleanupSuccess && revokedOpt.isPresent()) {
+                    try {
+                        phienXacThucRepository.save(revokedOpt.get().daThuHoiProviderXong());
+                    } catch (Exception ignored) {
+                        // Best-effort lưu trạng thái dọn credential
+                    }
+                }
+            }
         }
 
         // Phát hành token CSRF mới ở ngữ cảnh khách sau khi đăng xuất
@@ -104,15 +118,14 @@ public class AuthLogoutService {
     }
 
     private boolean donDepProviderSessionLocal(PhienXacThuc phien) {
-        if (supabaseAuthPort == null || sessionTokenCipher == null || phien.getAccessTokenMaHoa() == null) {
+        if (supabaseAuthPort == null || sessionTokenCryptoService == null || phien.getAccessTokenMaHoa() == null) {
             return false;
         }
         try {
-            String rawAccessToken = sessionTokenCipher.decryptToken(
-                    phien.getAccessTokenMaHoa(),
-                    phien.getId().toString(),
-                    "access",
-                    phien.getPhienBanKhoaMaHoa()
+            String rawAccessToken = sessionTokenCryptoService.decryptAccessToken(
+                    phien.getId(),
+                    phien.getPhienBanKhoaMaHoa(),
+                    phien.getAccessTokenMaHoa()
             );
             supabaseAuthPort.revokeProviderSessionLocal(rawAccessToken);
             return true;

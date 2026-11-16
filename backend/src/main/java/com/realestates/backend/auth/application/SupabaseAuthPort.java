@@ -3,7 +3,7 @@ package com.realestates.backend.auth.application;
 import java.util.UUID;
 
 /**
- * Cổng giao tiếp với Supabase Auth phục vụ luồng đăng ký tài khoản Người dùng (UC-25 / AUTH-10).
+ * Cổng giao tiếp với Supabase Auth phục vụ luồng đăng ký, xác minh email, đăng nhập, làm mới token và thu hồi phiên.
  */
 public interface SupabaseAuthPort {
     /**
@@ -23,11 +23,28 @@ public interface SupabaseAuthPort {
     void sendSignupVerificationEmail(String normalizedEmail);
 
     /**
-     * Làm mới access token và refresh token qua Supabase Auth (POST /auth/v1/token?grant_type=refresh_token)
-     * theo cơ chế rotation của provider (PHIEN-08 & TS1-071).
+     * Xác minh mã liên kết email một lần (token_hash) với mục đích cố định type = "signup" (AUTH-15 / UC-26).
+     * Tuyệt đối không dùng type = "email" hoặc nhận type từ phía client.
+     * Nếu Supabase Auth phát hành session tạm trong phản hồi verify, adapter tự thu hồi cục bộ (scope=local)
+     * và không bao giờ trả access/refresh token ra ngoài.
      */
-    default SupabaseRefreshedSession refreshSessionToken(String rawRefreshToken) {
-        throw new UnsupportedOperationException("Chưa cài đặt refreshSessionToken");
+    default SupabaseVerifiedIdentity verifySignupEmailTokenHash(String tokenHash) {
+        throw new UnsupportedOperationException("Chưa cài đặt verifySignupEmailTokenHash");
+    }
+
+    /**
+     * Xác minh mã OTP 6 chữ số (0-9) hoặc mã xác minh đi kèm email với mục đích cố định type = "signup" (AUTH-15 / UC-26).
+     */
+    default SupabaseVerifiedIdentity verifySignupEmailOtp(String normalizedEmail, String sixDigitOtp) {
+        return verifySignupEmailTokenHash(sixDigitOtp);
+    }
+
+    /**
+     * Tra cứu người dùng đã tạo trên Supabase Auth theo email (phục vụ gửi lại xác minh khi kho in-memory khởi động lại
+     * hoặc khi bước tạo hồ sơ nội bộ lúc đăng ký bị gián đoạn theo §8.4).
+     */
+    default java.util.Optional<SupabaseVerifiedIdentity> findProviderUserByEmail(String normalizedEmail) {
+        return java.util.Optional.empty();
     }
 
     /**
@@ -39,10 +56,26 @@ public interface SupabaseAuthPort {
     }
 
     /**
-     * Yêu cầu Supabase Auth thu hồi phiên với phạm vi local (POST /auth/v1/logout?scope=local) (PHIEN-11).
-     * Provider lỗi sau commit không hồi phục quyền ứng dụng (best-effort cleanup).
+     * Xác thực email + mật khẩu với Supabase Auth (POST /auth/v1/token?grant_type=password)
+     * phục vụ đăng nhập (UC-27 / FR-15 / AC-15.4 / PHIEN-02).
      */
-    default void revokeProviderSessionLocal(String rawAccessToken) {
-        // Mặc định no-op nếu không có provider hoặc adapter stub
+    default SupabaseAuthenticatedSession authenticateWithPassword(String normalizedEmail, String rawPassword) {
+        throw new UnsupportedOperationException("Chưa cài đặt authenticateWithPassword");
+    }
+
+    /**
+     * Làm mới access token và refresh token qua Supabase Auth (POST /auth/v1/token?grant_type=refresh_token)
+     * theo cơ chế rotation của provider (PHIEN-08 & TS1-071).
+     */
+    default SupabaseRefreshedSession refreshSessionToken(String rawRefreshToken) {
+        throw new UnsupportedOperationException("Chưa cài đặt refreshSessionToken");
+    }
+
+    /**
+     * Thu hồi cục bộ (scope=local) phiên Supabase Auth tương ứng với accessToken (best-effort)
+     * khi quá trình kiểm tra hậu kỳ hoặc lưu phiên PostgreSQL thất bại (thiet-ke-phien-sprint-1.md §3.1).
+     */
+    default void revokeProviderSessionLocal(String accessToken) {
+        // Mặc định no-op cho các stub đơn giản
     }
 }

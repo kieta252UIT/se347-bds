@@ -11,7 +11,7 @@ import com.realestates.backend.auth.exception.AccountLockedException;
 import com.realestates.backend.auth.exception.AuthProviderUnavailableException;
 import com.realestates.backend.auth.exception.EmailNotVerifiedException;
 import com.realestates.backend.auth.exception.UnauthenticatedSessionException;
-import com.realestates.backend.auth.infrastructure.SessionTokenCipher;
+import com.realestates.backend.auth.infrastructure.SessionTokenCryptoService;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -41,7 +41,7 @@ public class AuthSessionMaintenanceService {
     private final TaiKhoanRepository taiKhoanRepository;
     private final PhienXacThucRepository phienXacThucRepository;
     private final AuthBrowserSessionLifecyclePort sessionLifecyclePort;
-    private final SessionTokenCipher sessionTokenCipher;
+    private final SessionTokenCryptoService sessionTokenCryptoService;
     private final SupabaseAuthPort supabaseAuthPort;
 
     @Value("${app.security.session-clear-on-restart:false}")
@@ -49,28 +49,28 @@ public class AuthSessionMaintenanceService {
 
     private final Instant serverBootTime = Instant.now();
 
-    public AuthSessionMaintenanceService(
-            TaiKhoanRepository taiKhoanRepository,
-            PhienXacThucRepository phienXacThucRepository,
-            AuthBrowserSessionLifecyclePort sessionLifecyclePort,
-            SessionTokenCipher sessionTokenCipher,
-            SupabaseAuthPort supabaseAuthPort
-    ) {
-        this.taiKhoanRepository = Objects.requireNonNull(taiKhoanRepository, "taiKhoanRepository không được null");
-        this.phienXacThucRepository = Objects.requireNonNull(phienXacThucRepository, "phienXacThucRepository không được null");
-        this.sessionLifecyclePort = Objects.requireNonNull(sessionLifecyclePort, "sessionLifecyclePort không được null");
-        this.sessionTokenCipher = sessionTokenCipher != null ? sessionTokenCipher : new SessionTokenCipher();
-        this.supabaseAuthPort = supabaseAuthPort;
-    }
-
     @Autowired
     public AuthSessionMaintenanceService(
             TaiKhoanRepository taiKhoanRepository,
             PhienXacThucRepository phienXacThucRepository,
             AuthBrowserSessionLifecyclePort sessionLifecyclePort,
-            SessionTokenCipher sessionTokenCipher
+            SessionTokenCryptoService sessionTokenCryptoService,
+            SupabaseAuthPort supabaseAuthPort
     ) {
-        this(taiKhoanRepository, phienXacThucRepository, sessionLifecyclePort, sessionTokenCipher, null);
+        this.taiKhoanRepository = Objects.requireNonNull(taiKhoanRepository, "taiKhoanRepository không được null");
+        this.phienXacThucRepository = Objects.requireNonNull(phienXacThucRepository, "phienXacThucRepository không được null");
+        this.sessionLifecyclePort = Objects.requireNonNull(sessionLifecyclePort, "sessionLifecyclePort không được null");
+        this.sessionTokenCryptoService = sessionTokenCryptoService;
+        this.supabaseAuthPort = supabaseAuthPort;
+    }
+
+    public AuthSessionMaintenanceService(
+            TaiKhoanRepository taiKhoanRepository,
+            PhienXacThucRepository phienXacThucRepository,
+            AuthBrowserSessionLifecyclePort sessionLifecyclePort,
+            SessionTokenCryptoService sessionTokenCryptoService
+    ) {
+        this(taiKhoanRepository, phienXacThucRepository, sessionLifecyclePort, sessionTokenCryptoService, null);
     }
 
     /**
@@ -90,9 +90,14 @@ public class AuthSessionMaintenanceService {
             throw new UnauthenticatedSessionException();
         }
 
-        // Khi cấu hình session-clear-on-restart bật: từ chối các phiên tạo trước thời điểm server khởi động lại (buộc đăng nhập lại)
         if (sessionClearOnRestart && phien.getTaoLuc() != null && phien.getTaoLuc().isBefore(serverBootTime)) {
-            throw new UnauthenticatedSessionException("Phiên đăng nhập đã kết thúc do backend vừa khởi động lại.");
+            phienXacThucRepository.revokeByMaCookieBam(
+                    maCookieBam,
+                    PhienXacThuc.LY_DO_THU_HOI_BAO_MAT,
+                    Instant.now(),
+                    false
+            );
+            throw new UnauthenticatedSessionException();
         }
 
         TaiKhoan taiKhoan = docTaiKhoanTuKhoChinh(phien.getTaiKhoanId())
@@ -100,33 +105,19 @@ public class AuthSessionMaintenanceService {
 
         kiemTraTrangThaiTaiKhoanVaPhien(phien, taiKhoan);
 
-        // Kiểm tra và làm mới access token provider nếu cần theo PHIEN-08 (khi có cấu hình SupabaseAuthPort)
-        PhienXacThuc activePhien = refreshAccessTokenNeuCan(phien, taiKhoan);
+        // Kiểm tra và tự động làm mới access token nếu sắp hết hạn dưới cơ chế lease + CAS (PHIEN-08)
+        phien = refreshAccessTokenNeuCan(phien, taiKhoan);
 
-        return PrincipalPhienHienTai.tuPhienVaTaiKhoan(activePhien, taiKhoan);
+        return PrincipalPhienHienTai.tuPhienVaTaiKhoan(phien, taiKhoan);
     }
 
     /**
-     * Đọc hồ sơ tài khoản hiện tại cho GET /api/me kèm hỗ trợ duy trì đăng nhập và refresh token.
-     */
-    public TaiKhoanHienTai layTaiKhoanHienTai(String rawSessionCookieValue) {
-        PrincipalPhienHienTai principal = duyTriVaKiemTraPhien(rawSessionCookieValue);
-        return new TaiKhoanHienTai(
-                principal.getTaiKhoanId(),
-                principal.getEmail(),
-                principal.getHoTen(),
-                principal.getSoDienThoai(),
-                principal.getVaiTro(),
-                principal.getTrangThai(),
-                principal.isEmailDaXacMinh()
-        );
-    }
-
-    /**
-     * Kiểm tra và thực hiện làm mới access token theo cơ chế Lease 30s + CAS versioning (PHIEN-08 & TS1-071).
-     * Đảm bảo:
-     * - Access JWT hết hạn kỹ thuật không làm đứt phiên ứng dụng (ADR-0012).
-     * - Hai request đồng thời trên cùng phiên không gọi provider cạnh tranh và dùng chung kết quả mới.
+     * Tự động làm mới access token Supabase Auth nếu cần theo PHIEN-08.
+     * Quy tắc:
+     * - Chỉ làm mới khi access_token sắp hết hạn (buffer 60s) hoặc đã hết hạn kỹ thuật.
+     * - Lease 30s đảm bảo chỉ duy nhất một thread/tiến trình gọi Supabase Auth.
+     * - Các request đồng thời chờ tối đa 2s để dùng chung token mới.
+     * - Nếu provider 503 tạm thời: giải phóng lease, giữ nguyên phiên hiện tại và ném 503 để client thử lại (chống mất credential).
      * - Nếu phiên bị thu hồi trong lúc chờ refresh, không hồi sinh phiên cũ.
      */
     public PhienXacThuc refreshAccessTokenNeuCan(PhienXacThuc phien, TaiKhoan taiKhoan) {
@@ -136,39 +127,41 @@ public class AuthSessionMaintenanceService {
 
         Instant now = Instant.now();
         if (!phien.isCanRefreshAccessToken(now, TOKEN_REFRESH_BUFFER_SECONDS)) {
-            // Token còn trên 60s, dùng credential hiện tại
-            return phien;
-        }
-
-        // Nếu phiên không lưu credential provider (hoặc đã dọn sạch), bỏ qua bước refresh provider
-        if (phien.getRefreshTokenMaHoa() == null) {
             return phien;
         }
 
         UUID leaseId = UUID.randomUUID();
-        Instant leaseUntil = now.plusSeconds(LEASE_DURATION_SECONDS);
+        Instant leaseExpiresAt = now.plusSeconds(LEASE_DURATION_SECONDS);
 
-        // 1. Thử nhận lease 30s (nguyên tử dưới CAS/kho lưu trữ)
-        Optional<PhienXacThuc> leasedOpt = phienXacThucRepository.tryAcquireRefreshLease(
-                phien.getId(),
-                leaseId,
-                leaseUntil,
-                now
-        );
-
-        if (leasedOpt.isEmpty()) {
-            // Có worker khác đang giữ lease: chờ tối đa 2s để đọc lại kết quả đã làm mới (PHIEN-08 Mục 1)
+        // Thử xin lease 30s
+        Optional<PhienXacThuc> acquired = phienXacThucRepository.tryAcquireRefreshLease(phien.getId(), leaseId, leaseExpiresAt, now);
+        if (acquired.isEmpty()) {
+            // Có request khác đang refresh cho phiên này: chờ tối đa 2s để dùng chung token mới (PHIEN-08 Mục 1)
             return choVaDocLaiPhienSauKhiWorkerKhacRefresh(phien.getId(), phien.getMaCookieBam());
         }
 
-        PhienXacThuc leasedPhien = leasedOpt.get();
+        PhienXacThuc leasedPhien = acquired.get();
+        if (leasedPhien.isDaThuHoi()) {
+            phienXacThucRepository.releaseRefreshLease(phien.getId(), leaseId);
+            throw new UnauthenticatedSessionException();
+        }
+
+        return thucHienGoiSupabaseVaLuuTokenMoi(leasedPhien, leaseId);
+    }
+
+    private PhienXacThuc thucHienGoiSupabaseVaLuuTokenMoi(PhienXacThuc leasedPhien, UUID leaseId) {
+        if (sessionTokenCryptoService == null) {
+            phienXacThucRepository.releaseRefreshLease(leasedPhien.getId(), leaseId);
+            return leasedPhien;
+        }
+
+        // 1. Giải mã refresh_token hiện tại bằng SessionTokenCryptoService
         String rawRefreshToken;
         try {
-            rawRefreshToken = sessionTokenCipher.decryptToken(
-                    leasedPhien.getRefreshTokenMaHoa(),
-                    leasedPhien.getId().toString(),
-                    "refresh",
-                    leasedPhien.getPhienBanKhoaMaHoa()
+            rawRefreshToken = sessionTokenCryptoService.decryptRefreshToken(
+                    leasedPhien.getId(),
+                    leasedPhien.getPhienBanKhoaMaHoa(),
+                    leasedPhien.getRefreshTokenMaHoa()
             );
         } catch (Exception ex) {
             phienXacThucRepository.releaseRefreshLease(leasedPhien.getId(), leaseId);
@@ -195,20 +188,16 @@ public class AuthSessionMaintenanceService {
             throw new UnauthenticatedSessionException("Phiên đăng nhập đã hết hiệu lực do token làm mới không hợp lệ.");
         }
 
-        // 3. Mã hóa cặp token mới với nonce ngẫu nhiên mới và phiên bản khóa hiện hành
-        String activeKeyVersion = sessionTokenCipher.getActiveKeyVersion();
-        byte[] newAccessTokenMaHoa = sessionTokenCipher.encryptToken(
-                refreshedSession.accessToken(),
-                leasedPhien.getId().toString(),
-                "access",
-                activeKeyVersion
+        // 3. Mã hóa cặp token mới với nonce ngẫu nhiên mới và phiên bản khóa hiện hành bằng SessionTokenCryptoService
+        byte[] newAccessTokenMaHoa = sessionTokenCryptoService.encryptAccessToken(
+                leasedPhien.getId(),
+                refreshedSession.accessToken()
         );
-        byte[] newRefreshTokenMaHoa = sessionTokenCipher.encryptToken(
-                refreshedSession.refreshToken(),
-                leasedPhien.getId().toString(),
-                "refresh",
-                activeKeyVersion
+        byte[] newRefreshTokenMaHoa = sessionTokenCryptoService.encryptRefreshToken(
+                leasedPhien.getId(),
+                refreshedSession.refreshToken()
         );
+        String activeKeyVersion = sessionTokenCryptoService.getActiveKeyVersion();
         Instant newExpiry = Instant.now().plusSeconds(refreshedSession.expiresInSeconds());
 
         // 4. Lưu lại với CAS version và kiểm tra leaseId còn khớp

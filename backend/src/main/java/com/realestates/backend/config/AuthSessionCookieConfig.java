@@ -21,8 +21,8 @@ public class AuthSessionCookieConfig {
     @Value("${app.security.session-cookie-name:__Host-se214_session}")
     private String sessionCookieName;
 
-    @Value("${app.security.session-persistent:false}")
-    private boolean sessionPersistent = false;
+    @Value("${app.security.session-persistent:true}")
+    private boolean sessionPersistent = true;
 
     @Value("${app.security.session-max-age-seconds:31536000}")
     private long sessionMaxAgeSeconds;

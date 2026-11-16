@@ -26,7 +26,7 @@ import com.realestates.backend.auth.exception.AuthSessionSecurityExceptionHandle
 import com.realestates.backend.auth.infrastructure.DefaultAuthBrowserSessionLifecycleAdapter;
 import com.realestates.backend.auth.infrastructure.InMemoryPhienXacThucRepository;
 import com.realestates.backend.auth.infrastructure.InMemoryTaiKhoanRepository;
-import com.realestates.backend.auth.infrastructure.SessionTokenCipher;
+import com.realestates.backend.auth.infrastructure.SessionTokenCryptoService;
 import com.realestates.backend.config.AuthSessionCookieConfig;
 import com.realestates.backend.exception.GlobalApiExceptionHandler;
 import jakarta.servlet.http.Cookie;
@@ -80,7 +80,7 @@ class AuthLogoutAndSessionRevocationTests {
 
     private InMemoryTaiKhoanRepository taiKhoanRepository;
     private InMemoryPhienXacThucRepository phienXacThucRepository;
-    private SessionTokenCipher tokenCipher;
+    private SessionTokenCryptoService tokenCryptoService;
     private RecordingSupabaseAuthPort supabaseAuthPort;
     private DefaultAuthBrowserSessionLifecycleAdapter sessionLifecycleAdapter;
     private AuthSessionCookieConfig cookieConfig;
@@ -96,7 +96,7 @@ class AuthLogoutAndSessionRevocationTests {
     void setUp() {
         this.taiKhoanRepository = new InMemoryTaiKhoanRepository();
         this.phienXacThucRepository = new InMemoryPhienXacThucRepository();
-        this.tokenCipher = new SessionTokenCipher(ENCRYPTION_KEY, "v1");
+        this.tokenCryptoService = new SessionTokenCryptoService("v1:" + ENCRYPTION_KEY, "v1");
         this.supabaseAuthPort = new RecordingSupabaseAuthPort();
         this.sessionLifecycleAdapter = new DefaultAuthBrowserSessionLifecycleAdapter(CSRF_SECRET, phienXacThucRepository);
         this.cookieConfig = createDefaultCookieConfig();
@@ -105,7 +105,7 @@ class AuthLogoutAndSessionRevocationTests {
                 taiKhoanRepository,
                 phienXacThucRepository,
                 sessionLifecycleAdapter,
-                tokenCipher,
+                tokenCryptoService,
                 supabaseAuthPort
         );
 
@@ -120,7 +120,7 @@ class AuthLogoutAndSessionRevocationTests {
         this.logoutService = new AuthLogoutService(
                 phienXacThucRepository,
                 sessionLifecycleAdapter,
-                tokenCipher,
+                tokenCryptoService,
                 supabaseAuthPort
         );
 
@@ -252,7 +252,7 @@ class AuthLogoutAndSessionRevocationTests {
         DefaultAuthBrowserSessionLifecycleAdapter newLifecycle =
                 new DefaultAuthBrowserSessionLifecycleAdapter(CSRF_SECRET, phienXacThucRepository);
         AuthSessionMaintenanceService newMaintenance =
-                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, newLifecycle, tokenCipher, supabaseAuthPort);
+                new AuthSessionMaintenanceService(taiKhoanRepository, phienXacThucRepository, newLifecycle, tokenCryptoService, supabaseAuthPort);
         CurrentPermissionAndCsrfService newPermission =
                 new CurrentPermissionAndCsrfService(taiKhoanRepository, phienXacThucRepository, newLifecycle, List.of(ALLOWED_ORIGIN), newMaintenance);
         AuthCsrfAndMeController newMeController = new AuthCsrfAndMeController(newPermission, cookieConfig);
@@ -462,7 +462,7 @@ class AuthLogoutAndSessionRevocationTests {
             }
         };
 
-        AuthLogoutService failingLogoutService = new AuthLogoutService(failingRepo, sessionLifecycleAdapter, tokenCipher, supabaseAuthPort);
+        AuthLogoutService failingLogoutService = new AuthLogoutService(failingRepo, sessionLifecycleAdapter, tokenCryptoService, supabaseAuthPort);
         AuthLogoutController failingController = new AuthLogoutController(failingLogoutService, cookieConfig);
 
         MockMvc failingMockMvc = MockMvcBuilders.standaloneSetup(failingController)
@@ -502,7 +502,7 @@ class AuthLogoutAndSessionRevocationTests {
         AuthLogoutService resilientLogoutService = new AuthLogoutService(
                 phienXacThucRepository,
                 sessionLifecycleAdapter,
-                tokenCipher,
+                tokenCryptoService,
                 failingSupabasePort
         );
         AuthLogoutController resilientController = new AuthLogoutController(resilientLogoutService, cookieConfig);
@@ -568,8 +568,8 @@ class AuthLogoutAndSessionRevocationTests {
         String cookieHash = sessionLifecycleAdapter.hashSessionCookie(rawSessionCookie);
         UUID phienId = UUID.randomUUID();
 
-        byte[] accessCipher = tokenCipher.encryptToken("access-jwt-" + phienId, phienId.toString(), "access", "v1");
-        byte[] refreshCipher = tokenCipher.encryptToken("refresh-jwt-" + phienId, phienId.toString(), "refresh", "v1");
+        byte[] accessCipher = tokenCryptoService.encryptAccessToken(phienId, "access-jwt-" + phienId);
+        byte[] refreshCipher = tokenCryptoService.encryptRefreshToken(phienId, "refresh-jwt-" + phienId);
 
         PhienXacThuc phien = PhienXacThuc.taoPhienMoi(
                 phienId,
