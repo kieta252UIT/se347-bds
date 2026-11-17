@@ -300,16 +300,7 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
               >
                 Mật khẩu mới
               </label>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "0.5rem",
-                  paddingLeft: "0.75rem",
-                  gap: "6px",
-                }}
-              >
+              <div className="icon-field">
                 <LockIcon />
                 <input
                   type={showPassword ? "text" : "password"}
@@ -317,28 +308,12 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Tối thiểu 8 ký tự, có chữ hoa và số"
                   required
-                  style={{
-                    border: "none",
-                    outline: "none",
-                    padding: "0.65rem 0.5rem",
-                    flex: 1,
-                    fontSize: "0.9rem",
-                    background: "transparent",
-                  }}
                 />
                 <button
                   type="button"
+                  className="right-icon-btn"
                   onClick={() => setShowPassword(!showPassword)}
                   aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-                  style={{
-                    border: "none",
-                    background: "none",
-                    cursor: "pointer",
-                    color: "#64748b",
-                    padding: "0.5rem",
-                    display: "flex",
-                    alignItems: "center",
-                  }}
                 >
                   {showPassword ? <EyeIcon /> : <EyeOffIcon />}
                 </button>
