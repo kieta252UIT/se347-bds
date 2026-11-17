@@ -106,12 +106,15 @@ api.interceptors.response.use(
   (error: AxiosError<ApiErrorResponse & { maLoi?: string; thongDiep?: string }>) => {
     const status = error.response?.status;
     const responseData = error.response?.data;
+    const requestUrl = error.config?.url || "";
+    const isLoginEndpoint = requestUrl.includes("/auth/login");
+    const rawCode = responseData?.code || responseData?.maLoi || "";
 
     // Nếu gặp lỗi CSRF không hợp lệ (403), xóa token cũ để lần sau tự động xin lại token mới
     if (status === 403) {
       const isCsrfError =
-        responseData?.code === "CSRF_INVALID" ||
-        responseData?.maLoi === "CSRF_INVALID" ||
+        rawCode === "CSRF_INVALID" ||
+        rawCode === "CSRF_KHONG_HOP_LE" ||
         responseData?.message?.toLowerCase().includes("csrf") ||
         responseData?.thongDiep?.toLowerCase().includes("csrf");
       if (isCsrfError) {
@@ -122,8 +125,7 @@ api.interceptors.response.use(
     const normalizedError: ApiErrorResponse = {
       status: status || 500,
       code:
-        responseData?.code ||
-        responseData?.maLoi ||
+        rawCode ||
         (status === 401 ? "UNAUTHORIZED" : status === 403 ? "FORBIDDEN" : "INTERNAL_ERROR"),
       message:
         responseData?.message ||
@@ -134,11 +136,40 @@ api.interceptors.response.use(
       timestamp: responseData?.timestamp || new Date().toISOString(),
     };
 
-    // Khi nhận 401: phiên không hợp lệ hoặc đã bị thu hồi
-    if (status === 401) {
-      const { isAuthenticated, clearAuth } = useAuthStore.getState();
+    // Xử lý phiên mất quyền (Session Revoked / Expired / Account Locked / Role Changed):
+    if (status === 401 && !isLoginEndpoint) {
+      setCsrfToken(null);
+      const { isAuthenticated, handleSessionInvalidated } = useAuthStore.getState();
       if (isAuthenticated) {
-        clearAuth();
+        handleSessionInvalidated(
+          responseData?.thongDiep ||
+            responseData?.message ||
+            "Phiên đăng nhập đã hết hạn hoặc đã bị thu hồi. Vui lòng đăng nhập lại."
+        );
+      }
+    } else if (status === 403 && !isLoginEndpoint) {
+      if (rawCode === "TAI_KHOAN_BI_KHOA") {
+        setCsrfToken(null);
+        useAuthStore.getState().handleSessionInvalidated(
+          responseData?.thongDiep ||
+            responseData?.message ||
+            "Tài khoản của bạn đã bị khóa bởi Quản trị viên."
+        );
+      } else if (rawCode === "EMAIL_CHUA_XAC_MINH") {
+        setCsrfToken(null);
+        const currentUserEmail = useAuthStore.getState().user?.email;
+        useAuthStore.getState().handleSessionInvalidated(
+          responseData?.thongDiep ||
+            responseData?.message ||
+            "Tài khoản chưa hoàn tất xác minh email. Vui lòng xác minh trước khi tiếp tục.",
+          currentUserEmail
+        );
+      } else if (rawCode === "KHONG_DU_QUYEN") {
+        const { isAuthenticated, checkSession } = useAuthStore.getState();
+        if (isAuthenticated && !requestUrl.endsWith("/me")) {
+          // Đồng bộ lại vai trò mới nhất từ GET /api/me nếu quyền của phiên vừa bị thay đổi
+          checkSession().catch(() => {});
+        }
       }
     }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useLocation, useNavigate, Link } from "react-router";
 import { authApi } from "@/lib/auth";
+import { useAuthStore } from "@/stores/useAuthStore";
 import {
   BrandHomeIcon,
   ShieldCheckIcon,
@@ -50,6 +51,8 @@ export function VerifyEmailPage() {
         if (isMounted) {
           const isSuccess = result.trangThai === "da_xac_minh" || result.thanhCong === true;
           if (isSuccess) {
+            // Backend đã thu hồi phiên hiện tại trên browser (nếu có) và yêu cầu đăng nhập lại (canDangNhapLai = true)
+            useAuthStore.getState().clearAuth();
             setVerifySuccess(true);
             setMessage({
               type: "success",
@@ -109,6 +112,8 @@ export function VerifyEmailPage() {
       const isSuccess = result.trangThai === "da_xac_minh" || result.thanhCong === true;
 
       if (isSuccess) {
+        // Đồng bộ trạng thái: xóa phiên cũ trên client vì backend đã thu hồi phiên hiện tại (canDangNhapLai = true)
+        useAuthStore.getState().clearAuth();
         setVerifySuccess(true);
         setMessage({
           type: "success",

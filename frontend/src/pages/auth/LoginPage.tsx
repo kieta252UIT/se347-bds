@@ -23,6 +23,8 @@ export function LoginPage({ onSwitchToRegister, onLogin }: LoginProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const authNotice = useAuthStore((state) => state.authNotice);
+  const clearAuthNotice = useAuthStore((state) => state.clearAuthNotice);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,6 +34,9 @@ export function LoginPage({ onSwitchToRegister, onLogin }: LoginProps) {
   const [error, setError] = useState<string | null>(null);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+
+  const activeError = error || authNotice?.text || null;
+  const activeUnverifiedEmail = unverifiedEmail || authNotice?.unverifiedEmail || null;
 
   const handleSwitchToRegister = () => {
     if (onSwitchToRegister) {
@@ -55,6 +60,7 @@ export function LoginPage({ onSwitchToRegister, onLogin }: LoginProps) {
     setLoading(true);
     setError(null);
     setUnverifiedEmail(null);
+    clearAuthNotice();
 
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !password) {
@@ -149,15 +155,15 @@ export function LoginPage({ onSwitchToRegister, onLogin }: LoginProps) {
             <p>Nhập email và mật khẩu để tiếp tục vào hệ thống</p>
           </header>
 
-          {error && (
+          {activeError && (
             <div className="notice" role="status">
               <AlertIcon />
               <div style={{ flex: 1 }}>
-                <span>{error}</span>
-                {unverifiedEmail && (
+                <span>{activeError}</span>
+                {activeUnverifiedEmail && (
                   <div style={{ marginTop: "6px" }}>
                     <Link
-                      to={`/xac-minh-email?email=${encodeURIComponent(unverifiedEmail)}`}
+                      to={`/xac-minh-email?email=${encodeURIComponent(activeUnverifiedEmail)}`}
                       style={{ color: "#991b1b", fontWeight: 700, textDecoration: "underline" }}
                     >
                       Bấm vào đây để xác minh hoặc gửi lại email xác nhận →

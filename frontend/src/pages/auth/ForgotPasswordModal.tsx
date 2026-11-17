@@ -1,8 +1,44 @@
 import React, { useState } from "react";
 import { authService } from "@/services/authService";
+import { setCsrfToken } from "@/services/api";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { LockIcon, EyeIcon, EyeOffIcon } from "@/components/auth/AuthIcons";
 
-type Step = "email" | "otp";
+type Step = "email" | "otp" | "done";
+
+function resolvePasswordResetErrorMessage(err: unknown, fallback: string): string {
+  const errObj = err as { code?: string; maLoi?: string; message?: string; thongDiep?: string };
+  const code = errObj?.code || errObj?.maLoi;
+  if (code === "DAT_LAI_DANG_XU_LY") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Thao tác đặt lại mật khẩu của tài khoản đang được xử lý. Vui lòng đợi trong giây lát."
+    );
+  }
+  if (code === "KET_QUA_DAT_LAI_CHUA_XAC_DINH") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Chưa xác định được toàn bộ kết quả đặt lại do gián đoạn kết nối. Không tự gửi lại liên tục; hãy thử lại sau khi hệ thống tự động đối chiếu (khoảng 30 giây)."
+    );
+  }
+  if (code === "MAT_KHAU_KHONG_DAT_CHINH_SACH") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Mật khẩu mới không đạt chính sách bảo mật (tối thiểu 8 ký tự, tối đa 72 bytes UTF-8)."
+    );
+  }
+  if (code === "LIEN_KET_KHONG_HOP_LE") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Mã OTP khôi phục không hợp lệ, đã hết hạn hoặc đã được sử dụng."
+    );
+  }
+  return errObj?.thongDiep || errObj?.message || fallback;
+}
 
 interface ForgotPasswordModalProps {
   onClose: () => void;
@@ -62,20 +98,28 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
     try {
       setLoading(true);
       setMessage(null);
-      await authService.resetPassword({
+      const result = await authService.resetPassword({
         email: email.trim().toLowerCase(),
         otp: trimmedOtp,
         matKhauMoi: newPassword,
       });
+      // Khi đặt lại mật khẩu thành công, toàn bộ phiên cũ trên DB đã bị thu hồi (moc_thu_hoi + 1)
+      useAuthStore.getState().clearAuth();
+      setCsrfToken(null);
+      setStep("done");
       setMessage({
         type: "success",
-        text: "Mật khẩu đã được đặt lại thành công! Bạn có thể đăng nhập bằng mật khẩu mới.",
+        text:
+          result.thongDiep ||
+          "Mật khẩu đã được đặt lại thành công và các phiên cũ đã thu hồi! Bạn có thể đăng nhập bằng mật khẩu mới.",
       });
     } catch (err: unknown) {
-      const errObj = err as { message?: string; thongDiep?: string };
       setMessage({
         type: "error",
-        text: errObj?.message || errObj?.thongDiep || "Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.",
+        text: resolvePasswordResetErrorMessage(
+          err,
+          "Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+        ),
       });
     } finally {
       setLoading(false);
@@ -203,6 +247,29 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
               {loading ? "Đang gửi..." : "Gửi mã OTP về email"}
             </button>
           </form>
+        )}
+
+        {/* Bước 3: Hoàn tất đặt lại mật khẩu */}
+        {step === "done" && (
+          <div style={{ textAlign: "center", marginTop: "0.75rem" }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                width: "100%",
+                padding: "0.75rem",
+                backgroundColor: "#0f3d32",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "0.5rem",
+                fontWeight: 600,
+                fontSize: "0.95rem",
+                cursor: "pointer",
+              }}
+            >
+              Đăng nhập bằng mật khẩu mới →
+            </button>
+          </div>
         )}
 
         {/* Bước 2: Nhập OTP + mật khẩu mới */}

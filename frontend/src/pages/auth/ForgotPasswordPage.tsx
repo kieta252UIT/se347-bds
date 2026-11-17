@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams, useLocation } from "react-router";
 import { authService } from "@/services/authService";
+import { setCsrfToken } from "@/services/api";
+import { useAuthStore } from "@/stores/useAuthStore";
 import {
   BrandHomeIcon,
   ShieldCheckIcon,
@@ -11,10 +13,58 @@ import {
 } from "@/components/auth/AuthIcons";
 import "./auth.css";
 
+function resolveResetErrorMessage(err: unknown, fallback: string): string {
+  const errObj = err as { code?: string; maLoi?: string; message?: string; thongDiep?: string };
+  const code = errObj?.code || errObj?.maLoi;
+  if (code === "DAT_LAI_DANG_XU_LY") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Thao tác đặt lại mật khẩu của tài khoản đang được xử lý. Vui lòng đợi trong giây lát."
+    );
+  }
+  if (code === "KET_QUA_DAT_LAI_CHUA_XAC_DINH") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Chưa xác định được toàn bộ kết quả đặt lại do gián đoạn kết nối. Không tự gửi lại liên tục; hãy thử lại sau khi hệ thống tự động đối chiếu (khoảng 30 giây)."
+    );
+  }
+  if (code === "MAT_KHAU_KHONG_DAT_CHINH_SACH") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Mật khẩu mới không đạt chính sách bảo mật (tối thiểu 8 ký tự, tối đa 72 bytes UTF-8)."
+    );
+  }
+  if (code === "LIEN_KET_KHONG_HOP_LE") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Mã OTP hoặc liên kết khôi phục không hợp lệ, đã hết hạn hoặc đã được sử dụng."
+    );
+  }
+  return errObj?.thongDiep || errObj?.message || fallback;
+}
+
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<"email" | "otp" | "done">("email");
-  const [email, setEmail] = useState("");
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+
+  // Hỗ trợ nhận token_hash từ URL query (?token_hash=...) hoặc hash (#token_hash=...) theo api-specification §8.5
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const tokenHashFromUrl =
+    searchParams.get("tokenHash") ||
+    searchParams.get("token_hash") ||
+    searchParams.get("token") ||
+    hashParams.get("tokenHash") ||
+    hashParams.get("token_hash") ||
+    hashParams.get("token") ||
+    "";
+
+  const [step, setStep] = useState<"email" | "otp" | "done">(tokenHashFromUrl ? "otp" : "email");
+  const [email, setEmail] = useState(searchParams.get("email") || hashParams.get("email") || "");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -35,17 +85,16 @@ export function ForgotPasswordPage() {
     try {
       setLoading(true);
       setMessage(null);
-      await authService.requestPasswordReset({ email: trimmedEmail });
+      const res = await authService.requestPasswordReset({ email: trimmedEmail });
       setMessage({
         type: "success",
-        text: "Mã OTP 6 chữ số đã được gửi tới email của bạn. Hãy kiểm tra hộp thư.",
+        text: res.thongDiep || "Mã OTP 6 chữ số đã được gửi tới email của bạn. Hãy kiểm tra hộp thư.",
       });
       setStep("otp");
     } catch (err: unknown) {
-      const errObj = err as { message?: string; thongDiep?: string };
       setMessage({
         type: "error",
-        text: errObj?.message || errObj?.thongDiep || "Có lỗi xảy ra. Vui lòng thử lại sau.",
+        text: resolveResetErrorMessage(err, "Có lỗi xảy ra. Vui lòng thử lại sau."),
       });
     } finally {
       setLoading(false);
@@ -55,7 +104,7 @@ export function ForgotPasswordPage() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedOtp = otp.trim();
-    if (!/^\d{6}$/.test(trimmedOtp)) {
+    if (!tokenHashFromUrl && !/^\d{6}$/.test(trimmedOtp)) {
       setMessage({ type: "error", text: "Vui lòng nhập mã OTP hợp lệ gồm đúng 6 chữ số (0-9)." });
       return;
     }
@@ -70,21 +119,29 @@ export function ForgotPasswordPage() {
     try {
       setLoading(true);
       setMessage(null);
-      await authService.resetPassword({
-        email: email.trim().toLowerCase(),
-        otp: trimmedOtp,
+      const result = await authService.resetPassword({
+        email: email.trim() ? email.trim().toLowerCase() : undefined,
+        otp: !tokenHashFromUrl ? trimmedOtp : undefined,
+        tokenHash: tokenHashFromUrl || trimmedOtp,
         matKhauMoi: newPassword,
       });
+      // Thu hồi trạng thái phiên cục bộ vì Backend đã tăng moc_thu_hoi và thu hồi mọi phiên cũ
+      useAuthStore.getState().clearAuth();
+      setCsrfToken(null);
       setStep("done");
       setMessage({
         type: "success",
-        text: "Đặt lại mật khẩu thành công! Tất cả phiên cũ đã được thu hồi. Hãy đăng nhập lại bằng mật khẩu mới.",
+        text:
+          result.thongDiep ||
+          "Đặt lại mật khẩu thành công! Tất cả phiên cũ đã được thu hồi. Hãy đăng nhập lại bằng mật khẩu mới.",
       });
     } catch (err: unknown) {
-      const errObj = err as { message?: string; thongDiep?: string };
       setMessage({
         type: "error",
-        text: errObj?.message || errObj?.thongDiep || "Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.",
+        text: resolveResetErrorMessage(
+          err,
+          "Mã OTP hoặc liên kết không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+        ),
       });
     } finally {
       setLoading(false);
@@ -190,28 +247,30 @@ export function ForgotPasswordPage() {
             </form>
           ) : (
             <form onSubmit={handleResetPassword} noValidate>
-              <div className="field-group">
-                <label htmlFor="resetOtp">Mã OTP (6 chữ số) *</label>
-                <input
-                  id="resetOtp"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="123456"
-                  className="text-field"
-                  style={{
-                    letterSpacing: "0.35em",
-                    fontWeight: 700,
-                    textAlign: "center",
-                    fontSize: "1.2rem",
-                  }}
-                  required
-                />
-              </div>
+              {!tokenHashFromUrl && (
+                <div className="field-group">
+                  <label htmlFor="resetOtp">Mã OTP (6 chữ số) *</label>
+                  <input
+                    id="resetOtp"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="123456"
+                    className="text-field"
+                    style={{
+                      letterSpacing: "0.35em",
+                      fontWeight: 700,
+                      textAlign: "center",
+                      fontSize: "1.2rem",
+                    }}
+                    required
+                  />
+                </div>
+              )}
 
-              <div className="field-group" style={{ marginTop: "1rem" }}>
+              <div className="field-group" style={{ marginTop: tokenHashFromUrl ? 0 : "1rem" }}>
                 <label htmlFor="newPassword">Mật khẩu mới *</label>
                 <div className="icon-field">
                   <LockIcon />
