@@ -54,15 +54,22 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // 2. Nhóm Route xác thực (AuthLayout) - chỉ cho phép khi chưa đăng nhập
+  // 2. Nhóm Route xác thực (AuthLayout)
   {
     element: <GuestOnlyRoute><AuthLayout /></GuestOnlyRoute>,
     children: [
       { path: "dang-nhap", element: <LoginPage /> },
       { path: "dang-ky", element: <RegisterPage /> },
+    ],
+  },
+  {
+    element: <AuthLayout />,
+    children: [
       { path: "xac-minh-email", element: <VerifyEmailPage /> },
       { path: "auth/verify-email", element: <VerifyEmailPage /> },
       { path: "quen-mat-khau", element: <ForgotPasswordPage /> },
+      { path: "dat-lai-mat-khau", element: <ForgotPasswordPage /> },
+      { path: "auth/reset-password", element: <ForgotPasswordPage /> },
     ],
   },
 

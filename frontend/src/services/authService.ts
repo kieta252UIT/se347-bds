@@ -8,6 +8,7 @@ import type {
   DatLaiMatKhauPayload,
   GuiEmailKetQua,
   XacMinhKetQua,
+  DatLaiKetQua,
   DangNhapKetQua,
 } from "@/types/auth";
 
@@ -63,10 +64,22 @@ export const authService = {
   },
 
   /**
-   * Xác nhận OTP và đặt lại mật khẩu mới (POST /api/auth/password/reset)
+   * Xác nhận OTP 6 chữ số hoặc tokenHash và đặt lại mật khẩu mới (POST /api/auth/password/reset)
    */
-  async resetPassword(payload: DatLaiMatKhauPayload): Promise<XacMinhKetQua> {
-    const response = await api.post<XacMinhKetQua>("/auth/password/reset", payload);
+  async resetPassword(payload: DatLaiMatKhauPayload): Promise<DatLaiKetQua> {
+    const trimmedOtp = payload.otp?.trim();
+    const trimmedTokenHash = payload.tokenHash?.trim() || trimmedOtp || "";
+    const body: Record<string, string> = {
+      tokenHash: trimmedTokenHash,
+      matKhauMoi: payload.matKhauMoi,
+    };
+    if (trimmedOtp) {
+      body.otp = trimmedOtp;
+    }
+    if (payload.email && payload.email.trim()) {
+      body.email = payload.email.trim().toLowerCase();
+    }
+    const response = await api.post<DatLaiKetQua>("/auth/password/reset", body);
     return response.data;
   },
 };

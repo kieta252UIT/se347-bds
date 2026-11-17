@@ -1,5 +1,5 @@
 import { authService } from "@/services/authService";
-import type { GuiEmailKetQua, DangNhapKetQua, XacMinhKetQua } from "@/types/auth";
+import type { GuiEmailKetQua, DangNhapKetQua, XacMinhKetQua, DatLaiKetQua } from "@/types/auth";
 
 /**
  * Interface authApi tương thích với mã nguồn component của người dùng
@@ -51,10 +51,14 @@ export const authApi = {
   },
 
   /**
-   * Xác minh email hoàn tất
+   * Xác minh email hoàn tất (hỗ trợ cả mã OTP 6 chữ số hoặc liên kết tokenHash)
    */
   async verifyEmail(tokenHash?: string, otp?: string, email?: string): Promise<XacMinhKetQua> {
-    return authService.verifyEmail({ tokenHash, otp, email });
+    return authService.verifyEmail({
+      ...(tokenHash ? { tokenHash: tokenHash.trim() } : {}),
+      ...(otp ? { otp: otp.trim() } : {}),
+      ...(email ? { email: email.trim().toLowerCase() } : {}),
+    });
   },
 
   /**
@@ -62,6 +66,25 @@ export const authApi = {
    */
   async resendVerification(email: string): Promise<GuiEmailKetQua> {
     return authService.resendVerification({ email: email.trim().toLowerCase() });
+  },
+
+  /**
+   * Yêu cầu gửi mã OTP / liên kết khôi phục mật khẩu (POST /api/auth/password/reset-requests)
+   */
+  async requestPasswordReset(email: string): Promise<GuiEmailKetQua> {
+    return authService.requestPasswordReset({ email: email.trim().toLowerCase() });
+  },
+
+  /**
+   * Hoàn tất đặt lại mật khẩu qua OTP 6 chữ số hoặc tokenHash (POST /api/auth/password/reset)
+   */
+  async resetPassword(params: {
+    email?: string;
+    otp?: string;
+    tokenHash?: string;
+    matKhauMoi: string;
+  }): Promise<DatLaiKetQua> {
+    return authService.resetPassword(params);
   },
 
   /**
