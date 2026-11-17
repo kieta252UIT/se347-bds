@@ -48,6 +48,7 @@ public class AnhTinController {
                 request,
                 authSessionCookieConfig.getSessionCookieName()
         );
+        anhTinService.xacThucNguoiTaiAnh(rawSessionCookie);
         MultipartFile tep = layDungMotTep(request);
         AnhTamKetQua ketQua = anhTinService.taiAnhTam(rawSessionCookie, docNoiDung(tep));
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -76,6 +77,7 @@ public class AnhTinController {
                 .contentType(MediaType.parseMediaType(anh.get().mimeType()))
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.VARY, HttpHeaders.COOKIE)
+                .header("X-Content-Type-Options", "nosniff")
                 .body(anh.get().noiDung());
     }
 

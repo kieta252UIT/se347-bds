@@ -37,6 +37,11 @@ public class InMemoryAnhStorageAdapter implements AnhStoragePort {
         }
     }
 
+    @Override
+    public boolean xoaNeuTonTai(String khoaDoiTuong) {
+        return khoaDoiTuong != null && storage.remove(khoaDoiTuong) != null;
+    }
+
     public boolean tonTai(String khoaDoiTuong) {
         return storage.containsKey(khoaDoiTuong);
     }

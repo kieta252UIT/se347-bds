@@ -7,4 +7,9 @@ public interface AnhStoragePort {
     byte[] doc(String khoaDoiTuong);
 
     void xoa(String khoaDoiTuong);
+
+    default boolean xoaNeuTonTai(String khoaDoiTuong) {
+        xoa(khoaDoiTuong);
+        return true;
+    }
 }

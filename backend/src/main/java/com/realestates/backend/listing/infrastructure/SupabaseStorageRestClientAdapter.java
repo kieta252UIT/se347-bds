@@ -4,12 +4,16 @@ import com.realestates.backend.auth.exception.AuthProviderUnavailableException;
 import com.realestates.backend.auth.infrastructure.SupabaseAuthProperties;
 import com.realestates.backend.listing.application.AnhStoragePort;
 import java.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -17,6 +21,7 @@ import org.springframework.web.client.RestClientException;
 @ConditionalOnProperty(name = "app.repository.type", havingValue = "postgres")
 public class SupabaseStorageRestClientAdapter implements AnhStoragePort {
 
+    private static final Logger log = LoggerFactory.getLogger(SupabaseStorageRestClientAdapter.class);
     private static final String THONG_DIEP_GIAN_DOAN = "Dịch vụ lưu trữ ảnh đang tạm gián đoạn. Vui lòng thử lại sau.";
 
     private final SupabaseAuthProperties properties;
@@ -65,6 +70,7 @@ public class SupabaseStorageRestClientAdapter implements AnhStoragePort {
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException ex) {
+            ghiLogLoiStorage("lưu", khoaDoiTuong, ex);
             throw new AuthProviderUnavailableException(THONG_DIEP_GIAN_DOAN, ex);
         }
     }
@@ -85,6 +91,7 @@ public class SupabaseStorageRestClientAdapter implements AnhStoragePort {
                     .retrieve()
                     .body(byte[].class);
         } catch (RestClientException ex) {
+            ghiLogLoiStorage("đọc", khoaDoiTuong, ex);
             throw new AuthProviderUnavailableException(THONG_DIEP_GIAN_DOAN, ex);
         }
         if (noiDung == null || noiDung.length == 0) {
@@ -95,6 +102,15 @@ public class SupabaseStorageRestClientAdapter implements AnhStoragePort {
 
     @Override
     public void xoa(String khoaDoiTuong) {
+        xoaDoiTuong(khoaDoiTuong, false);
+    }
+
+    @Override
+    public boolean xoaNeuTonTai(String khoaDoiTuong) {
+        return xoaDoiTuong(khoaDoiTuong, true);
+    }
+
+    private boolean xoaDoiTuong(String khoaDoiTuong, boolean boQuaKhiKhongTimThay) {
         String baseUrl = properties.getNormalizedBaseUrl();
         String serviceRoleKey = properties.getServiceRoleKey();
         if (baseUrl.isBlank() || serviceRoleKey == null || serviceRoleKey.isBlank()) {
@@ -107,8 +123,26 @@ public class SupabaseStorageRestClientAdapter implements AnhStoragePort {
                     .header("Authorization", "Bearer " + serviceRoleKey.trim())
                     .retrieve()
                     .toBodilessEntity();
-        } catch (RestClientException ex) {
+            return true;
+        } catch (HttpClientErrorException.NotFound ex) {
+            if (boQuaKhiKhongTimThay) {
+                return false;
+            }
+            ghiLogLoiStorage("xóa", khoaDoiTuong, ex);
             throw new AuthProviderUnavailableException(THONG_DIEP_GIAN_DOAN, ex);
+        } catch (RestClientException ex) {
+            ghiLogLoiStorage("xóa", khoaDoiTuong, ex);
+            throw new AuthProviderUnavailableException(THONG_DIEP_GIAN_DOAN, ex);
+        }
+    }
+
+    private static void ghiLogLoiStorage(String hanhDong, String khoaDoiTuong, RestClientException ex) {
+        if (ex instanceof HttpClientErrorException clientEx) {
+            log.warn("Lỗi client 4xx từ Supabase Storage khi {} {}: status={}", hanhDong, khoaDoiTuong, clientEx.getStatusCode());
+        } else if (ex instanceof HttpServerErrorException serverEx) {
+            log.warn("Lỗi server 5xx từ Supabase Storage khi {} {}: status={}", hanhDong, khoaDoiTuong, serverEx.getStatusCode());
+        } else {
+            log.warn("Lỗi kết nối Supabase Storage khi {} {}: {}", hanhDong, khoaDoiTuong, ex.getMessage());
         }
     }
 }

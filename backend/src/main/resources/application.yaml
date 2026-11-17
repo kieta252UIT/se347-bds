@@ -56,6 +56,10 @@ server:
 app:
   repository:
     type: ${APP_REPOSITORY_TYPE:in-memory}
+  images:
+    temp-ttl-minutes: ${IMAGE_TEMP_TTL_MINUTES:1440}
+  map:
+    mode: ${MAP_PROVIDER_MODE:sandbox}
   security:
     allowed-origins: ${FRONTEND_ORIGIN:https://localhost,http://localhost:5173}
     cookie-secure: ${COOKIE_SECURE:true}

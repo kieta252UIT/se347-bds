@@ -18,32 +18,54 @@ import com.realestates.backend.listing.domain.KiemTraAnh;
 import com.realestates.backend.listing.domain.QuyenDocAnh;
 import com.realestates.backend.listing.dto.AnhTamKetQua;
 import java.awt.image.BufferedImage;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AnhTinService {
 
+    private static final Logger log = LoggerFactory.getLogger(AnhTinService.class);
+
     public static final String MA_LOI_DU_LIEU_KHONG_HOP_LE = "DU_LIEU_KHONG_HOP_LE";
     public static final String TRUONG_TEP = "tep";
     public static final String TRANG_THAI_ANH_TAM = "tam";
+    public static final long MAC_DINH_TTL_ANH_TAM_PHUT = 1440L;
 
     private final CurrentPermissionAndCsrfService permissionAndCsrfService;
     private final AnhTinRepository anhTinRepository;
     private final AnhStoragePort anhStoragePort;
+    private final long tempTtlMinutes;
 
     public AnhTinService(
             CurrentPermissionAndCsrfService permissionAndCsrfService,
             AnhTinRepository anhTinRepository,
             AnhStoragePort anhStoragePort
     ) {
+        this(permissionAndCsrfService, anhTinRepository, anhStoragePort, MAC_DINH_TTL_ANH_TAM_PHUT);
+    }
+
+    @Autowired
+    public AnhTinService(
+            CurrentPermissionAndCsrfService permissionAndCsrfService,
+            AnhTinRepository anhTinRepository,
+            AnhStoragePort anhStoragePort,
+            @Value("${app.images.temp-ttl-minutes:1440}") long tempTtlMinutes
+    ) {
         this.permissionAndCsrfService = Objects.requireNonNull(permissionAndCsrfService, "permissionAndCsrfService không được null");
         this.anhTinRepository = Objects.requireNonNull(anhTinRepository, "anhTinRepository không được null");
         this.anhStoragePort = Objects.requireNonNull(anhStoragePort, "anhStoragePort không được null");
+        this.tempTtlMinutes = Math.max(0L, tempTtlMinutes);
     }
 
     public PrincipalPhienHienTai xacThucNguoiTaiAnh(String rawSessionCookie) {
@@ -70,7 +92,11 @@ public class AnhTinService {
                 .orElseThrow(() -> loiTep("Nội dung tệp không phải ảnh JPEG, PNG hoặc WebP hợp lệ."));
 
         BufferedImage image = KiemTraAnh.giaiMaCoGioiHan(noiDung)
-                .orElseThrow(() -> loiTep("Nội dung tệp không phải ảnh JPEG, PNG hoặc WebP hợp lệ hoặc kích thước vượt quá giới hạn."));
+                .orElseThrow(() -> loiTep(
+                        "Ảnh không giải mã được hoặc vượt giới hạn "
+                                + KiemTraAnh.MAX_CHIEU_RONG + "x" + KiemTraAnh.MAX_CHIEU_CAO
+                                + " (" + KiemTraAnh.MAX_TONG_SO_PIXEL + " pixel)."
+                ));
 
         KiemTraAnh.BanAnhHienThi banHienThi;
         try {
@@ -84,11 +110,11 @@ public class AnhTinService {
         String khoaAnhHienThi = anhId + "-display." + banHienThi.duoiTep();
 
         // Vòng 3: Ghi Storage NGOÀI transaction để không giữ khóa DB suốt cuộc gọi mạng
-        anhStoragePort.luu(khoaTepGoc, noiDung, dinhDang.getMimeType());
         try {
+            anhStoragePort.luu(khoaTepGoc, noiDung, dinhDang.getMimeType());
             anhStoragePort.luu(khoaAnhHienThi, banHienThi.noiDung(), banHienThi.mimeType());
         } catch (RuntimeException ex) {
-            buTruXoaDoiTuong(khoaTepGoc, null);
+            buTruXoaDoiTuong(khoaTepGoc, khoaAnhHienThi);
             throw ex;
         }
 
@@ -133,65 +159,6 @@ public class AnhTinService {
         );
     }
 
-    public AnhTamKetQua taiAnhTam(PrincipalPhienHienTai nguoiTai, byte[] noiDung) {
-        Objects.requireNonNull(nguoiTai, "nguoiTai không được null");
-        if (noiDung == null || noiDung.length == 0) {
-            throw loiTep("Tệp ảnh rỗng.");
-        }
-        if (!KiemTraAnh.kichThuocHopLe(noiDung.length)) {
-            throw loiTep("Tệp ảnh vượt quá " + KiemTraAnh.KICH_THUOC_TOI_DA_BYTE + " byte.");
-        }
-        DinhDangAnh dinhDang = KiemTraAnh.nhanDang(noiDung)
-                .orElseThrow(() -> loiTep("Nội dung tệp không phải ảnh JPEG, PNG hoặc WebP hợp lệ."));
-
-        BufferedImage image = KiemTraAnh.giaiMaCoGioiHan(noiDung)
-                .orElseThrow(() -> loiTep("Nội dung tệp không phải ảnh JPEG, PNG hoặc WebP hợp lệ hoặc kích thước vượt quá giới hạn."));
-
-        KiemTraAnh.BanAnhHienThi banHienThi;
-        try {
-            banHienThi = KiemTraAnh.taoBanHienThi(image, dinhDang);
-        } catch (Exception ex) {
-            throw loiTep("Không thể tạo bản hiển thị cho ảnh.");
-        }
-
-        UUID anhId = UUID.randomUUID();
-        String khoaTepGoc = anhId + "." + dinhDang.getDuoiTep();
-        String khoaAnhHienThi = anhId + "-display." + banHienThi.duoiTep();
-
-        anhStoragePort.luu(khoaTepGoc, noiDung, dinhDang.getMimeType());
-        try {
-            anhStoragePort.luu(khoaAnhHienThi, banHienThi.noiDung(), banHienThi.mimeType());
-        } catch (RuntimeException ex) {
-            buTruXoaDoiTuong(khoaTepGoc, null);
-            throw ex;
-        }
-
-        try {
-            anhTinRepository.luuAnhTam(
-                    anhId,
-                    nguoiTai.getTaiKhoanId(),
-                    khoaTepGoc,
-                    khoaAnhHienThi,
-                    dinhDang,
-                    noiDung.length
-            );
-        } catch (AuthProviderUnavailableException ex) {
-            buTruXoaDoiTuong(khoaTepGoc, khoaAnhHienThi);
-            throw ex;
-        } catch (RuntimeException ex) {
-            buTruXoaDoiTuong(khoaTepGoc, khoaAnhHienThi);
-            throw new AuthProviderUnavailableException("Kho lưu trữ ảnh đang tạm gián đoạn. Vui lòng thử lại sau.", ex);
-        }
-
-        return new AnhTamKetQua(
-                anhId,
-                TRANG_THAI_ANH_TAM,
-                dinhDang.getMimeType(),
-                noiDung.length,
-                "/api/images/" + anhId + "/content"
-        );
-    }
-
     public Optional<AnhDoc> docAnh(UUID anhId, String rawSessionCookie) {
         PrincipalPhienHienTai nguoiDoc = permissionAndCsrfService
                 .phanGiaiPrincipalTuyChonChoYeuCauCongKhai(rawSessionCookie)
@@ -206,15 +173,60 @@ public class AnhTinService {
         return Optional.of(new AnhDoc(mimeType, noiDung));
     }
 
+    @Scheduled(
+            fixedDelayString = "${app.images.cleanup-interval-ms:300000}",
+            initialDelayString = "${app.images.cleanup-initial-delay-ms:60000}"
+    )
+    public void donDepAnhMoCoiDinhKy() {
+        try {
+            donDepAnhTamQuaHan(Instant.now());
+        } catch (Exception ex) {
+            log.warn("Lỗi định kỳ khi dọn ảnh tạm/mồ côi: {}", ex.getMessage());
+        }
+    }
+
+    public int donDepAnhTamQuaHan(Instant thoiDiemHienTai) {
+        Instant mocHienTai = thoiDiemHienTai != null ? thoiDiemHienTai : Instant.now();
+        Instant mocHetHan = mocHienTai.minus(Duration.ofMinutes(tempTtlMinutes));
+        anhTinRepository.danhDauAnhTamQuaHanChoDon(mocHetHan);
+
+        int soDaDon = 0;
+        List<AnhTinRepository.AnhChoDon> danhSachChoDon = anhTinRepository.layDanhSachAnhChoDon(100);
+        for (AnhTinRepository.AnhChoDon anh : danhSachChoDon) {
+            boolean gocSach = xoaKhoaNeuKhongConThamChieu(anh.id(), anh.khoaTepGoc());
+            boolean hienThiSach = xoaKhoaNeuKhongConThamChieu(anh.id(), anh.khoaAnhHienThi());
+            if (gocSach && hienThiSach && anhTinRepository.xoaMetadataAnhChoDon(anh.id())) {
+                soDaDon++;
+            }
+        }
+        return soDaDon;
+    }
+
     public void donDepAnhMoCoi(String khoaDoiTuong) {
         if (khoaDoiTuong == null || khoaDoiTuong.isBlank()) {
             return;
         }
-        if (!anhTinRepository.coThamChieuKhoa(khoaDoiTuong)) {
-            try {
-                anhStoragePort.xoa(khoaDoiTuong);
-            } catch (Exception ignored) {
+        try {
+            if (!anhTinRepository.coThamChieuKhoa(khoaDoiTuong)) {
+                anhStoragePort.xoaNeuTonTai(khoaDoiTuong);
             }
+        } catch (Exception ex) {
+            log.warn("Không thể dọn đối tượng ảnh mồ côi {}: {}", khoaDoiTuong, ex.getMessage());
+        }
+    }
+
+    private boolean xoaKhoaNeuKhongConThamChieu(UUID anhId, String khoaDoiTuong) {
+        if (khoaDoiTuong == null || khoaDoiTuong.isBlank()) {
+            return true;
+        }
+        try {
+            if (!anhTinRepository.coThamChieuKhoaNgoaiAnh(anhId, khoaDoiTuong)) {
+                anhStoragePort.xoaNeuTonTai(khoaDoiTuong);
+            }
+            return true;
+        } catch (Exception ex) {
+            log.warn("Chưa thể dọn đối tượng {} cho ảnh {}: {}", khoaDoiTuong, anhId, ex.getMessage());
+            return false;
         }
     }
 
@@ -222,17 +234,19 @@ public class AnhTinService {
         if (khoaTepGoc != null) {
             try {
                 if (!anhTinRepository.coThamChieuKhoa(khoaTepGoc)) {
-                    anhStoragePort.xoa(khoaTepGoc);
+                    anhStoragePort.xoaNeuTonTai(khoaTepGoc);
                 }
-            } catch (Exception ignored) {
+            } catch (Exception ex) {
+                log.warn("Bù trừ xóa đối tượng ảnh gốc {} thất bại: {}", khoaTepGoc, ex.getMessage());
             }
         }
         if (khoaAnhHienThi != null) {
             try {
                 if (!anhTinRepository.coThamChieuKhoa(khoaAnhHienThi)) {
-                    anhStoragePort.xoa(khoaAnhHienThi);
+                    anhStoragePort.xoaNeuTonTai(khoaAnhHienThi);
                 }
-            } catch (Exception ignored) {
+            } catch (Exception ex) {
+                log.warn("Bù trừ xóa đối tượng ảnh hiển thị {} thất bại: {}", khoaAnhHienThi, ex.getMessage());
             }
         }
     }

@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.realestates.backend.auth.application.AuthLogoutService;
 import com.realestates.backend.auth.application.CurrentPermissionAndCsrfService;
 import com.realestates.backend.auth.domain.PhienXacThuc;
 import com.realestates.backend.auth.domain.TaiKhoan;
@@ -280,6 +281,7 @@ class AnhTinApiTests {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType("image/png"))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(content().bytes(png));
     }
 
@@ -408,6 +410,136 @@ class AnhTinApiTests {
         assertThat(khoAnh.doiTuong.isEmpty()).isTrue();
     }
 
+    @Test
+    @DisplayName("Chưa đăng nhập gửi sai trường multipart vẫn bị chặn 401 trước khi đọc tệp")
+    void chuaDangNhapGuiFormSaiVanTra401() throws Exception {
+        String csrf = sessionLifecycleAdapter.issueAnonymousCsrfToken();
+        java.util.concurrent.atomic.AtomicBoolean daDocMultipart = new java.util.concurrent.atomic.AtomicBoolean(false);
+        RequestBuilder requestChuaDangNhap = servletContext -> {
+            org.springframework.mock.web.MockMultipartHttpServletRequest req =
+                    new org.springframework.mock.web.MockMultipartHttpServletRequest(servletContext) {
+                        @Override
+                        public org.springframework.util.MultiValueMap<String, org.springframework.web.multipart.MultipartFile> getMultiFileMap() {
+                            daDocMultipart.set(true);
+                            return super.getMultiFileMap();
+                        }
+                    };
+            req.setMethod("POST");
+            req.setRequestURI("/api/images");
+            req.addHeader(HttpHeaders.ORIGIN, ORIGIN);
+            req.addHeader(AuthSessionCookieConfig.CSRF_HEADER_NAME, csrf);
+            req.setCookies(new Cookie(AuthSessionCookieConfig.CSRF_COOKIE_NAME, csrf));
+            req.addFile(tep("saiTruong", "anh.png", "image/png", new byte[]{1, 2, 3}));
+            return req;
+        };
+
+        mockMvc.perform(requestChuaDangNhap)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.maLoi").value("CHUA_DANG_NHAP"));
+
+        assertThat(daDocMultipart.get()).isFalse();
+        assertThat(khoAnh.doiTuong.isEmpty()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Multipart thiếu boundary ném MultipartException được chặn 400 thay vì 500")
+    void multipartThieuBoundaryTra400() throws Exception {
+        Fixture nguoiDung = taoNguoiDung(VaiTroTaiKhoan.NGUOI_DUNG);
+        String csrf = sessionLifecycleAdapter.issueSessionCsrfToken(nguoiDung.rawSessionCookie());
+        RequestBuilder requestMultipartHong = servletContext -> {
+            org.springframework.mock.web.MockMultipartHttpServletRequest req =
+                    new org.springframework.mock.web.MockMultipartHttpServletRequest(servletContext) {
+                        @Override
+                        public org.springframework.util.MultiValueMap<String, org.springframework.web.multipart.MultipartFile> getMultiFileMap() {
+                            throw new org.springframework.web.multipart.MultipartException("Failed to parse multipart servlet request");
+                        }
+                    };
+            req.setMethod("POST");
+            req.setRequestURI("/api/images");
+            req.setContentType("multipart/form-data");
+            req.addHeader(HttpHeaders.ORIGIN, ORIGIN);
+            req.addHeader(AuthSessionCookieConfig.CSRF_HEADER_NAME, csrf);
+            req.setCookies(
+                    new Cookie(AuthSessionCookieConfig.CSRF_COOKIE_NAME, csrf),
+                    new Cookie(AuthSessionCookieConfig.SESSION_COOKIE_NAME, nguoiDung.rawSessionCookie())
+            );
+            return req;
+        };
+
+        mockMvc.perform(requestMultipartHong)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.maLoi").value("DU_LIEU_KHONG_HOP_LE"));
+    }
+
+    @Test
+    @DisplayName("Người dùng đăng xuất trong lúc lưu Storage thì giao dịch kiểm quyền từ chối 401 và dọn Storage")
+    void kiemLaiQuyenChanUploadKhiDangXuatGiuaChung() throws Exception {
+        Fixture nguoiDung = taoNguoiDung(VaiTroTaiKhoan.NGUOI_DUNG);
+        AuthLogoutService logoutService = new AuthLogoutService(phienXacThucRepository, sessionLifecycleAdapter);
+
+        khoAnh.hanhDongKhiLuu = () -> logoutService.dangXuat(nguoiDung.rawSessionCookie());
+
+        mockMvc.perform(yeuCauTai(nguoiDung.rawSessionCookie(), tep("tep", "anh.png", "image/png", taoAnh("png"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.maLoi").value("CHUA_DANG_NHAP"));
+
+        assertThat(khoAnh.doiTuong.isEmpty()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Dọn ảnh tạm quá hạn xóa Storage và metadata sau khi dọn, giữ lại object đang được ảnh khác tham chiếu và giữ cho_don khi Storage lỗi")
+    void donDepAnhTamQuaHanXulyDungThuTuVaSharedKeyVaRetry() throws Exception {
+        AnhTinService anhTinService = new AnhTinService(permissionAndCsrfService, anhTinRepository, khoAnh, 60L);
+        Fixture chu = taoNguoiDung(VaiTroTaiKhoan.NGUOI_DUNG);
+
+        UUID anhQuaHanId = UUID.fromString(taiAnhLen(chu, taoAnh("png")));
+        String khoaGocQuaHan = anhTinRepository.timAnhDeDoc(anhQuaHanId).orElseThrow().khoaTepGoc();
+        String khoaHienThiQuaHan = anhTinRepository.timAnhDeDoc(anhQuaHanId).orElseThrow().khoaAnhHienThi();
+
+        // Một ảnh khác dùng chung khóa gốc (giả lập deduplicate hoặc clone) -> không được xóa object đang được tham chiếu
+        UUID anhChiaSeId = UUID.randomUUID();
+        String khoaGocChung = "shared/object-goc.png";
+        khoAnh.doiTuong.put(khoaGocChung, new byte[]{1, 2, 3});
+        anhTinRepository.luuAnhTam(anhChiaSeId, chu.taiKhoan().getId(), khoaGocChung, anhChiaSeId + "-display.png", DinhDangAnh.PNG, 3L);
+        khoAnh.doiTuong.put(anhChiaSeId + "-display.png", new byte[]{4, 5, 6});
+
+        // Dữ liệu ảnh bình thường (chưa hết hạn) không bị xóa ở hiện tại
+        assertThat(anhTinService.donDepAnhTamQuaHan(Instant.now())).isZero();
+        assertThat(anhTinRepository.timAnhDeDoc(anhQuaHanId)).isPresent();
+
+        // Storage lỗi khi xóa -> ảnh đã chuyển sang cho_don và metadata PHẢI được giữ lại để retry
+        UUID anhLoiStorageId = UUID.fromString(taiAnhLen(chu, taoAnh("png")));
+        String khoaGocLoi = anhTinRepository.timAnhDeDoc(anhLoiStorageId).orElseThrow().khoaTepGoc();
+        anhTinRepository.xoaMetadataAnhChoDon(anhLoiStorageId); // chưa cho_don -> không xóa gì
+        khoAnh.loiKhiXoa = true;
+        int soDaDonKhiLoi = anhTinService.donDepAnhTamQuaHan(Instant.now().plusSeconds(3700));
+        assertThat(soDaDonKhiLoi).isZero();
+        assertThat(anhTinRepository.timAnhDeDoc(anhQuaHanId)).isPresent();
+        assertThat(anhTinRepository.timAnhDeDoc(anhQuaHanId).get().trangThaiAnh()).isEqualTo("cho_don");
+        assertThat(anhTinRepository.timAnhDeDoc(anhLoiStorageId)).isPresent();
+        assertThat(anhTinRepository.timAnhDeDoc(anhLoiStorageId).get().trangThaiAnh()).isEqualTo("cho_don");
+        assertThat(khoAnh.doiTuong).containsKeys(khoaGocQuaHan, khoaHienThiQuaHan, khoaGocLoi, khoaGocChung);
+
+        // Hết lỗi Storage -> retry dọn sạch tất cả ảnh cho_don và giữ nguyên object chỉ-thuộc-ảnh-chia-sẻ nếu ảnh chia sẻ chưa bị đánh dấu...
+        // Khoan: cả 3 đều quá hạn ở trên, nên giờ tạo thêm ảnh còn sống dùng chung khoaGocChung để kiểm chứng coThamChieuKhoaNgoaiAnh!
+        khoAnh.loiKhiXoa = false;
+        UUID anhMoiDungChungKhoaId = UUID.randomUUID();
+        anhTinRepository.luuAnhTam(anhMoiDungChungKhoaId, chu.taiKhoan().getId(), khoaGocChung, anhMoiDungChungKhoaId + "-display.png", DinhDangAnh.PNG, 3L);
+        khoAnh.doiTuong.put(anhMoiDungChungKhoaId + "-display.png", new byte[]{7, 8, 9});
+
+        int soDaDonSauRetry = anhTinService.donDepAnhTamQuaHan(Instant.now().plusSeconds(120));
+        assertThat(soDaDonSauRetry).isEqualTo(3);
+        assertThat(anhTinRepository.timAnhDeDoc(anhQuaHanId)).isEmpty();
+        assertThat(anhTinRepository.timAnhDeDoc(anhLoiStorageId)).isEmpty();
+        assertThat(anhTinRepository.timAnhDeDoc(anhChiaSeId)).isEmpty();
+        assertThat(anhTinRepository.timAnhDeDoc(anhMoiDungChungKhoaId)).isPresent();
+
+        assertThat(khoAnh.doiTuong).doesNotContainKey(khoaGocQuaHan);
+        assertThat(khoAnh.doiTuong).doesNotContainKey(khoaHienThiQuaHan);
+        assertThat(khoAnh.doiTuong).doesNotContainKey(khoaGocLoi);
+        assertThat(khoAnh.doiTuong).containsKey(khoaGocChung);
+    }
+
     private String taiAnhLen(Fixture nguoiTai, byte[] noiDung) throws Exception {
         String json = mockMvc.perform(yeuCauTai(nguoiTai.rawSessionCookie(), tep("tep", "anh.png", "image/png", noiDung)))
                 .andExpect(status().isCreated())
@@ -496,6 +628,7 @@ class AnhTinApiTests {
 
         private final Map<String, byte[]> doiTuong = new ConcurrentHashMap<>();
         private volatile boolean loi;
+        private volatile boolean loiKhiXoa;
         private volatile Runnable hanhDongKhiLuu;
 
         @Override
@@ -520,6 +653,9 @@ class AnhTinApiTests {
 
         @Override
         public void xoa(String khoaDoiTuong) {
+            if (loiKhiXoa) {
+                throw new AuthProviderUnavailableException("Storage giả lập đang lỗi khi xóa.");
+            }
             if (khoaDoiTuong != null) {
                 doiTuong.remove(khoaDoiTuong);
             }

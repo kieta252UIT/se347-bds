@@ -127,5 +127,45 @@ class SupabaseStorageRestClientAdapterTests {
         assertThatThrownBy(() -> adapter.xoa("abc.png"))
                 .isInstanceOf(AuthProviderUnavailableException.class);
     }
+
+    @Test
+    @DisplayName("xoaNeuTonTai trả true khi Storage xóa thành công 200")
+    void xoaNeuTonTaiTraTrueKhiThanhCong() {
+        server.expect(requestTo("http://supabase.test/storage/v1/object/anh-tin/abc.png"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(header("apikey", "khoa-dich-vu"))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer khoa-dich-vu"))
+                .andRespond(withSuccess());
+
+        boolean daXoa = adapter.xoaNeuTonTai("abc.png");
+
+        org.assertj.core.api.Assertions.assertThat(daXoa).isTrue();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("xoaNeuTonTai trả false khi Storage báo 404 không tìm thấy")
+    void xoaNeuTonTaiTraFalseKhi404() {
+        server.expect(requestTo("http://supabase.test/storage/v1/object/anh-tin/missing.png"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withResourceNotFound());
+
+        boolean daXoa = adapter.xoaNeuTonTai("missing.png");
+
+        org.assertj.core.api.Assertions.assertThat(daXoa).isFalse();
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("xoaNeuTonTai vẫn ném AuthProviderUnavailableException khi Storage trả 5xx")
+    void xoaNeuTonTaiNemLoiKhi5xx() {
+        server.expect(requestTo("http://supabase.test/storage/v1/object/anh-tin/err.png"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withServerError());
+
+        assertThatThrownBy(() -> adapter.xoaNeuTonTai("err.png"))
+                .isInstanceOf(AuthProviderUnavailableException.class);
+        server.verify();
+    }
 }
 

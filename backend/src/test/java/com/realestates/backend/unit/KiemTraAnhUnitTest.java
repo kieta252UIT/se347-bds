@@ -133,5 +133,79 @@ class KiemTraAnhUnitTest {
         assertThat(KiemTraAnh.giaiMaCoGioiHan(new byte[0])).isEmpty();
         assertThat(KiemTraAnh.giaiMaCoGioiHan(new byte[]{1, 2, 3, 4})).isEmpty();
     }
+
+    @Test
+    @DisplayName("WebP VP8X giả 30 byte không có chunk ảnh bị từ chối")
+    void webpVp8xGiaBiTuChoi() {
+        byte[] vp8xGia = {
+                'R', 'I', 'F', 'F', 22, 0, 0, 0,
+                'W', 'E', 'B', 'P', 'V', 'P', '8', 'X',
+                10, 0, 0, 0, 0, 0, 0, 0,
+                7, 0, 0, 7, 0, 0
+        };
+
+        assertThat(KiemTraAnh.nhanDang(vp8xGia)).isEmpty();
+        assertThat(KiemTraAnh.giaiMaCoGioiHan(vp8xGia)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Ảnh vượt ngưỡng pixel cho phép bị giaiMaCoGioiHan từ chối")
+    void anhVuotGioiHanPixelBiTuChoi() throws IOException {
+        BufferedImage quaRong = new BufferedImage(KiemTraAnh.MAX_CHIEU_RONG + 1, 1, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream dauRa = new ByteArrayOutputStream();
+        ImageIO.write(quaRong, "png", dauRa);
+        byte[] pngQuaRong = dauRa.toByteArray();
+
+        assertThat(KiemTraAnh.nhanDang(pngQuaRong)).contains(DinhDangAnh.PNG);
+        assertThat(KiemTraAnh.giaiMaCoGioiHan(pngQuaRong)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Ảnh JPEG có EXIF Orientation 6 được xoay đúng chiều và loại bỏ tag EXIF ở bản hiển thị")
+    void jpegExifOrientation6DuocXoayDungChieu() throws IOException {
+        BufferedImage goc = new BufferedImage(24, 16, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = goc.createGraphics();
+        try {
+            g.setColor(java.awt.Color.RED);
+            g.fillRect(0, 0, 24, 8);
+            g.setColor(java.awt.Color.BLUE);
+            g.fillRect(0, 8, 24, 8);
+        } finally {
+            g.dispose();
+        }
+        ByteArrayOutputStream rawJpeg = new ByteArrayOutputStream();
+        ImageIO.write(goc, "jpg", rawJpeg);
+        byte[] jpegCoExif = ganApp1ExifOrientation6(rawJpeg.toByteArray());
+
+        assertThat(KiemTraAnh.nhanDang(jpegCoExif)).contains(DinhDangAnh.JPEG);
+        assertThat(KiemTraAnh.docExifOrientation(jpegCoExif)).isEqualTo(6);
+
+        BufferedImage daXoay = KiemTraAnh.giaiMaCoGioiHan(jpegCoExif).orElseThrow();
+        assertThat(daXoay.getWidth()).isEqualTo(16);
+        assertThat(daXoay.getHeight()).isEqualTo(24);
+        int topLeftRgb = daXoay.getRGB(1, 1);
+        assertThat(topLeftRgb & 0xFF).isGreaterThan(150);
+        assertThat((topLeftRgb >> 16) & 0xFF).isLessThan(80);
+
+        KiemTraAnh.BanAnhHienThi banHienThi = KiemTraAnh.taoBanHienThi(daXoay, DinhDangAnh.JPEG);
+        assertThat(KiemTraAnh.docExifOrientation(banHienThi.noiDung())).isEqualTo(1);
+    }
+
+    private static byte[] ganApp1ExifOrientation6(byte[] jpeg) {
+        byte[] app1 = {
+                (byte) 0xFF, (byte) 0xE1, 0x00, 0x22,
+                'E', 'x', 'i', 'f', 0x00, 0x00,
+                'M', 'M', 0x00, 0x2A, 0x00, 0x00, 0x00, 0x08,
+                0x00, 0x01,
+                0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00
+        };
+        byte[] out = new byte[jpeg.length + app1.length];
+        out[0] = jpeg[0];
+        out[1] = jpeg[1];
+        System.arraycopy(app1, 0, out, 2, app1.length);
+        System.arraycopy(jpeg, 2, out, 2 + app1.length, jpeg.length - 2);
+        return out;
+    }
 }
 

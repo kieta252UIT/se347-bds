@@ -3,6 +3,9 @@ package com.realestates.backend.listing.infrastructure;
 import com.realestates.backend.listing.domain.AnhTinRepository;
 import com.realestates.backend.listing.domain.AnhTinTruyCap;
 import com.realestates.backend.listing.domain.DinhDangAnh;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,6 +47,38 @@ public class PostgreSqlAnhTinRepository implements AnhTinRepository {
                 SELECT 1 FROM se214.anh_tin
                 WHERE khoa_tep_goc = ? OR khoa_anh_hien_thi = ?
             )
+            """;
+
+    private static final String SQL_CO_THAM_CHIEU_KHOA_NGOAI_ANH = """
+            SELECT EXISTS (
+                SELECT 1 FROM se214.anh_tin
+                WHERE id <> ? AND (khoa_tep_goc = ? OR khoa_anh_hien_thi = ?)
+            )
+            """;
+
+    private static final String SQL_DANH_DAU_ANH_TAM_QUA_HAN = """
+            UPDATE se214.anh_tin
+            SET trang_thai = 'cho_don'
+            WHERE trang_thai = 'tam'
+              AND phien_ban_tin_id IS NULL
+              AND thu_tu IS NULL
+              AND tao_luc <= ?
+            """;
+
+    private static final String SQL_LAY_ANH_CHO_DON = """
+            SELECT id, khoa_tep_goc, khoa_anh_hien_thi
+            FROM se214.anh_tin
+            WHERE trang_thai = 'cho_don'
+              AND phien_ban_tin_id IS NULL
+            ORDER BY tao_luc ASC, id ASC
+            LIMIT ?
+            """;
+
+    private static final String SQL_XOA_METADATA_ANH_CHO_DON = """
+            DELETE FROM se214.anh_tin
+            WHERE id = ?
+              AND trang_thai = 'cho_don'
+              AND phien_ban_tin_id IS NULL
             """;
 
     private static final RowMapper<AnhTinTruyCap> ANH_ROW_MAPPER = (rs, rowNum) -> new AnhTinTruyCap(
@@ -90,5 +125,52 @@ public class PostgreSqlAnhTinRepository implements AnhTinRepository {
         }
         Boolean co = jdbcTemplate.queryForObject(SQL_CO_THAM_CHIEU_KHOA, Boolean.class, khoaDoiTuong, khoaDoiTuong);
         return Boolean.TRUE.equals(co);
+    }
+
+    @Override
+    public boolean coThamChieuKhoaNgoaiAnh(UUID anhId, String khoaDoiTuong) {
+        if (anhId == null || khoaDoiTuong == null || khoaDoiTuong.isBlank()) {
+            return false;
+        }
+        Boolean co = jdbcTemplate.queryForObject(
+                SQL_CO_THAM_CHIEU_KHOA_NGOAI_ANH,
+                Boolean.class,
+                anhId,
+                khoaDoiTuong,
+                khoaDoiTuong
+        );
+        return Boolean.TRUE.equals(co);
+    }
+
+    @Override
+    public int danhDauAnhTamQuaHanChoDon(Instant mocHetHan) {
+        if (mocHetHan == null) {
+            return 0;
+        }
+        return jdbcTemplate.update(SQL_DANH_DAU_ANH_TAM_QUA_HAN, Timestamp.from(mocHetHan));
+    }
+
+    @Override
+    public List<AnhChoDon> layDanhSachAnhChoDon(int gioiHan) {
+        if (gioiHan <= 0) {
+            return List.of();
+        }
+        return jdbcTemplate.query(
+                SQL_LAY_ANH_CHO_DON,
+                (rs, rowNum) -> new AnhChoDon(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("khoa_tep_goc"),
+                        rs.getString("khoa_anh_hien_thi")
+                ),
+                gioiHan
+        );
+    }
+
+    @Override
+    public boolean xoaMetadataAnhChoDon(UUID anhId) {
+        if (anhId == null) {
+            return false;
+        }
+        return jdbcTemplate.update(SQL_XOA_METADATA_ANH_CHO_DON, anhId) > 0;
     }
 }

@@ -1,16 +1,37 @@
 package com.realestates.backend.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.realestates.backend.auth.application.AuthBrowserSessionLifecyclePort;
+import com.realestates.backend.auth.application.AuthLogoutService;
+import com.realestates.backend.auth.application.CurrentPermissionAndCsrfService;
+import com.realestates.backend.auth.domain.PhienXacThuc;
+import com.realestates.backend.auth.domain.PhienXacThucRepository;
 import com.realestates.backend.auth.domain.PrincipalPhienHienTai;
+import com.realestates.backend.auth.domain.TaiKhoan;
+import com.realestates.backend.auth.domain.TaiKhoanRepository;
+import com.realestates.backend.auth.domain.ThaoTacNghiepVu;
+import com.realestates.backend.auth.domain.TrangThaiTaiKhoan;
 import com.realestates.backend.auth.domain.VaiTroTaiKhoan;
+import com.realestates.backend.auth.exception.UnauthenticatedSessionException;
 import com.realestates.backend.database.TestDatabaseSettings;
+import com.realestates.backend.listing.application.AnhStoragePort;
+import com.realestates.backend.listing.domain.AnhTinRepository;
 import com.realestates.backend.listing.domain.AnhTinTruyCap;
 import com.realestates.backend.listing.domain.DinhDangAnh;
 import com.realestates.backend.listing.domain.QuyenDocAnh;
 import com.realestates.backend.listing.infrastructure.PostgreSqlAnhTinRepository;
+import com.realestates.backend.listing.infrastructure.SupabaseStorageRestClientAdapter;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,13 +39,35 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-@SpringBootTest
+@SpringBootTest(properties = "app.repository.type=postgres")
 @ContextConfiguration(initializers = TestDatabaseSettings.SpringInitializer.class)
 class PostgreSqlAnhTinRepositoryTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private AnhTinRepository anhTinRepository;
+
+    @Autowired
+    private TaiKhoanRepository taiKhoanRepository;
+
+    @Autowired
+    private PhienXacThucRepository phienXacThucRepository;
+
+    @Autowired
+    private AnhStoragePort anhStoragePort;
+
+    @Autowired
+    private CurrentPermissionAndCsrfService permissionAndCsrfService;
+
+    @Autowired
+    private AuthLogoutService authLogoutService;
+
+    @Autowired
+    private AuthBrowserSessionLifecyclePort sessionLifecyclePort;
 
     private UUID taoTaiKhoan() {
         UUID taiKhoanId = UUID.randomUUID();
@@ -153,6 +196,154 @@ class PostgreSqlAnhTinRepositoryTests {
         // Người khác hoặc khách vãng lai không được đọc ảnh tạm
         assertThat(QuyenDocAnh.duocPhepDoc(anh.get(), nguoiKhacPrincipal)).isFalse();
         assertThat(QuyenDocAnh.duocPhepDoc(anh.get(), null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("Wiring PostgreSQL thật: lưu TaiKhoan khớp V1, mở transaction thực cho ghi kèm kiểm quyền và chặn race đăng xuất")
+    void cauHinhPostgresThat_luuTaiKhoanGiaoDichVaChanRaceLogout() throws Exception {
+        assertThat(anhTinRepository).isInstanceOf(PostgreSqlAnhTinRepository.class);
+        assertThat(anhStoragePort).isInstanceOf(SupabaseStorageRestClientAdapter.class);
+        assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+
+        UUID taiKhoanId = UUID.randomUUID();
+        UUID phien1Id = UUID.randomUUID();
+        UUID phien2Id = UUID.randomUUID();
+        UUID anhCommitId = UUID.randomUUID();
+        UUID anhBiChanId = UUID.randomUUID();
+        Instant now = Instant.now();
+
+        TaiKhoan taiKhoan = TaiKhoan.khoiPhucTuLuuTru(
+                taiKhoanId,
+                UUID.randomUUID(),
+                "pg-real-" + taiKhoanId + "@bds-test.local",
+                "Người dùng PG thật",
+                "0909000111",
+                VaiTroTaiKhoan.NGUOI_DUNG,
+                TrangThaiTaiKhoan.HOAT_DONG,
+                true,
+                0L,
+                "san_sang",
+                now,
+                now,
+                now
+        );
+
+        String rawCookie1 = sessionLifecyclePort.generateRawSessionCookie();
+        String hashCookie1 = sessionLifecyclePort.hashSessionCookie(rawCookie1);
+        PhienXacThuc phien1 = PhienXacThuc.taoPhienMoi(
+                phien1Id,
+                taiKhoanId,
+                hashCookie1,
+                0L,
+                now,
+                UUID.randomUUID(),
+                "cipher-access".getBytes(StandardCharsets.UTF_8),
+                "cipher-refresh".getBytes(StandardCharsets.UTF_8),
+                now.plusSeconds(3600),
+                "v1"
+        );
+
+        String rawCookie2 = sessionLifecyclePort.generateRawSessionCookie();
+        String hashCookie2 = sessionLifecyclePort.hashSessionCookie(rawCookie2);
+        PhienXacThuc phien2 = PhienXacThuc.taoPhienMoi(
+                phien2Id,
+                taiKhoanId,
+                hashCookie2,
+                0L,
+                now,
+                UUID.randomUUID(),
+                "cipher-access".getBytes(StandardCharsets.UTF_8),
+                "cipher-refresh".getBytes(StandardCharsets.UTF_8),
+                now.plusSeconds(3600),
+                "v1"
+        );
+
+        try {
+            // 1. PostgreSqlTaiKhoanRepository hoạt động chuẩn với V1 (không lỗi cột tao_luc/cap_nhat_luc)
+            taiKhoanRepository.save(taiKhoan);
+            assertThat(taiKhoanRepository.findById(taiKhoanId)).isPresent();
+            UUID opId = UUID.randomUUID();
+            assertThat(taiKhoanRepository.updateDongBoAuthCas(taiKhoanId, null, "dang_dat_lai", opId, now)).isTrue();
+            assertThat(taiKhoanRepository.updateDongBoAuthCas(taiKhoanId, opId, "san_sang", null, now)).isTrue();
+
+            phienXacThucRepository.save(phien1);
+            phienXacThucRepository.save(phien2);
+
+            // 2. Bên trong thucThiGhiCoKiemLaiQuyenTrongTransaction có transaction DB thật và khóa chặn logout chen ngang
+            AtomicBoolean txActive = new AtomicBoolean(false);
+            CompletableFuture<Void> logoutGiuaChung = new CompletableFuture<>();
+            AtomicBoolean logoutCompletedBeforeInsertCommit = new AtomicBoolean(false);
+
+            permissionAndCsrfService.thucThiGhiCoKiemLaiQuyenTrongTransaction(
+                    rawCookie1,
+                    ThaoTacNghiepVu.TAO_NHAP_CAP_NHAT_NHAP_GUI_DUYET_TIN,
+                    null,
+                    null,
+                    Map.of("tep", "anh"),
+                    fresh -> {
+                        txActive.set(TransactionSynchronizationManager.isActualTransactionActive());
+                        Thread logoutThread = new Thread(() -> {
+                            try {
+                                authLogoutService.dangXuat(rawCookie1);
+                                logoutGiuaChung.complete(null);
+                            } catch (Throwable t) {
+                                logoutGiuaChung.completeExceptionally(t);
+                            }
+                        });
+                        logoutThread.start();
+                        try {
+                            Thread.sleep(150);
+                        } catch (InterruptedException ignored) {
+                            Thread.currentThread().interrupt();
+                        }
+                        logoutCompletedBeforeInsertCommit.set(logoutGiuaChung.isDone());
+                        anhTinRepository.luuAnhTam(
+                                anhCommitId,
+                                fresh.getTaiKhoanId(),
+                                anhCommitId + ".png",
+                                anhCommitId + "-display.png",
+                                DinhDangAnh.PNG,
+                                512L
+                        );
+                        return null;
+                    }
+            );
+
+            assertThat(txActive.get()).isTrue();
+            assertThat(logoutCompletedBeforeInsertCommit.get()).isFalse();
+            logoutGiuaChung.get(5, TimeUnit.SECONDS);
+
+            // Dữ liệu tồn tại bền vững sau commit ngoài mọi @Transactional test wrapper
+            Optional<AnhTinTruyCap> sauCommit = anhTinRepository.timAnhDeDoc(anhCommitId);
+            assertThat(sauCommit).isPresent();
+            assertThat(sauCommit.get().khoaAnhHienThi()).isEqualTo(anhCommitId + "-display.png");
+
+            // 3. Nếu phiên đã đăng xuất xong trước khi ghi, transaction kiểm quyền từ chối và không chèn dòng
+            authLogoutService.dangXuat(rawCookie2);
+            assertThatThrownBy(() -> permissionAndCsrfService.thucThiGhiCoKiemLaiQuyenTrongTransaction(
+                    rawCookie2,
+                    ThaoTacNghiepVu.TAO_NHAP_CAP_NHAT_NHAP_GUI_DUYET_TIN,
+                    null,
+                    null,
+                    Map.of("tep", "anh"),
+                    fresh -> {
+                        anhTinRepository.luuAnhTam(
+                                anhBiChanId,
+                                fresh.getTaiKhoanId(),
+                                anhBiChanId + ".png",
+                                anhBiChanId + "-display.png",
+                                DinhDangAnh.PNG,
+                                512L
+                        );
+                        return null;
+                    }
+            )).isInstanceOf(UnauthenticatedSessionException.class);
+            assertThat(anhTinRepository.timAnhDeDoc(anhBiChanId)).isEmpty();
+        } finally {
+            jdbcTemplate.update("DELETE FROM se214.anh_tin WHERE id IN (?, ?)", anhCommitId, anhBiChanId);
+            jdbcTemplate.update("DELETE FROM se214.phien_xac_thuc WHERE tai_khoan_id = ?", taiKhoanId);
+            jdbcTemplate.update("DELETE FROM se214.tai_khoan WHERE id = ?", taiKhoanId);
+        }
     }
 }
 

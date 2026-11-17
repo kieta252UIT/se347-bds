@@ -4,12 +4,25 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import javax.sql.DataSource;
 
 public interface PhienXacThucRepository {
 
     Optional<PhienXacThuc> findById(UUID id);
 
+    default Optional<PhienXacThuc> findByIdForUpdate(UUID id) {
+        return findById(id);
+    }
+
     Optional<PhienXacThuc> findByMaCookieBam(String maCookieBam);
+
+    default Optional<PhienXacThuc> findByMaCookieBamForUpdate(String maCookieBam) {
+        return findByMaCookieBam(maCookieBam);
+    }
+
+    default DataSource getDataSource() {
+        return null;
+    }
 
     Optional<PhienXacThuc> findBySupabaseSessionId(UUID supabaseSessionId);
 
