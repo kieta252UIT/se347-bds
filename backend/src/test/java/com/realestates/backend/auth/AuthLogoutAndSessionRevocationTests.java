@@ -45,15 +45,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-/**
- * Bộ kiểm thử toàn diện cho task "Thu hồi đúng phiên khi đăng xuất; chặn sử dụng lại phiên cũ"
- * theo đặc tả:
- * - openapi-sprint-1.yaml: POST /api/auth/logout (operationId: dangXuatPhienHienTai)
- * - api-specification-sprint-1.md §8.8
- * - thiet-ke-phien-sprint-1.md §2.1, §3.2 (Logout)
- * - test-specification-sprint-1.md: TS1-016 (Logout một phiên và replay), TS1-020 (Bền vững qua restart),
- *   AC-15.4, UC-28, FR-15.
- */
 class AuthLogoutAndSessionRevocationTests {
 
     private static final String ALLOWED_ORIGIN = "https://localhost";
@@ -133,11 +124,6 @@ class AuthLogoutAndSessionRevocationTests {
                 .addFilters(csrfFilter)
                 .build();
     }
-
-    // =========================================================================
-    // 1. TS1-016 & UC-28: Logout một phiên thành công và xóa cookie
-    // =========================================================================
-
     @Test
     @DisplayName("TS1-016 / UC-28 / AC-15.4: POST /api/auth/logout thu hồi đúng phiên app, xóa cookie session (Max-Age=0), cấp CSRF ngữ cảnh khách mới và gọi Supabase Auth local logout")
     void logoutCurrentSessionRevokesDatabaseRecordAndClearsSessionCookie() throws Exception {
@@ -158,10 +144,6 @@ class AuthLogoutAndSessionRevocationTests {
                 .andExpect(jsonPath("$.trangThai").value("da_dang_xuat"))
                 .andExpect(jsonPath("$.csrfToken").isNotEmpty())
                 .andReturn();
-
-        // Kiểm tra Set-Cookie có 2 dòng riêng:
-        // 1. Xóa __Host-se214_session (Max-Age=0, Path=/, Secure, HttpOnly, SameSite=Lax, không Domain)
-        // 2. Đặt __Host-se214_csrf với nonce mới ngữ cảnh khách (anonymous)
         List<String> setCookies = result.getResponse().getHeaders(HttpHeaders.SET_COOKIE);
         assertThat(setCookies).hasSize(2);
 
@@ -192,15 +174,8 @@ class AuthLogoutAndSessionRevocationTests {
         assertThat(updatedPhien.get().isDaThuHoi()).isTrue();
         assertThat(updatedPhien.get().getLyDoThuHoi()).isEqualTo(PhienXacThuc.LY_DO_DANG_XUAT);
         assertThat(updatedPhien.get().getThuHoiLuc()).isNotNull();
-
-        // Kiểm tra provider session scope local được dọn dẹp
         assertThat(supabaseAuthPort.revokedAccessTokens).hasSize(1);
     }
-
-    // =========================================================================
-    // 2. TS1-016: Chặn sử dụng lại phiên cũ (Replay Attack)
-    // =========================================================================
-
     @Test
     @DisplayName("TS1-016 / AC-15.4 / PX-02: Replay cookie của phiên vừa logout bị từ chối 401 CHUA_DANG_NHAP và tuyệt đối KHÔNG trả Set-Cookie gia hạn")
     void replayRevokedSessionCookieImmediatelyRejectedWith401() throws Exception {
@@ -216,29 +191,19 @@ class AuthLogoutAndSessionRevocationTests {
                                 new Cookie(AuthSessionCookieConfig.CSRF_COOKIE_NAME, sessionCsrfToken)
                         ))
                 .andExpect(status().isOk());
-
-        // 2. Attacker hoặc client cũ cố tình gửi lại cookie phiên cũ lên GET /api/me
         MvcResult replayResult = mockMvc.perform(get("/api/me")
                         .cookie(new Cookie(AuthSessionCookieConfig.SESSION_COOKIE_NAME, fixture.rawSessionCookie())))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.maLoi").value("CHUA_DANG_NHAP"))
                 .andReturn();
-
-        // Không gửi Set-Cookie gia hạn phiên cho cookie đã thu hồi
         assertThat(replayResult.getResponse().getHeader(HttpHeaders.SET_COOKIE)).isNull();
     }
-
-    // =========================================================================
-    // 3. TS1-016 & TS1-020: Bền vững qua restart backend rồi replay
-    // =========================================================================
-
     @Test
     @DisplayName("TS1-016 / TS1-020: Restart backend rồi replay cookie đã logout vẫn bị từ chối 401 CHUA_DANG_NHAP (thu hồi bền vững trong DB)")
     void restartBackendAndReplayRevokedSessionContinuesToBeRejectedWith401() throws Exception {
         ActiveSessionFixture fixture = seedActiveSession("user.restart.replay@example.com", VaiTroTaiKhoan.NGUOI_DUNG);
         String sessionCsrfToken = sessionLifecycleAdapter.issueSessionCsrfToken(fixture.rawSessionCookie());
 
-        // 1. Logout phiên
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .header(AuthSessionCookieConfig.CSRF_HEADER_NAME, sessionCsrfToken)
@@ -248,7 +213,6 @@ class AuthLogoutAndSessionRevocationTests {
                         ))
                 .andExpect(status().isOk());
 
-        // 2. Khởi động lại backend (mô phỏng instance mới hoàn toàn kết nối vào cùng CSDL)
         DefaultAuthBrowserSessionLifecycleAdapter newLifecycle =
                 new DefaultAuthBrowserSessionLifecycleAdapter(CSRF_SECRET, phienXacThucRepository);
         AuthSessionMaintenanceService newMaintenance =
@@ -260,18 +224,11 @@ class AuthLogoutAndSessionRevocationTests {
         MockMvc newMockMvc = MockMvcBuilders.standaloneSetup(newMeController)
                 .setControllerAdvice(new AuthSessionSecurityExceptionHandler())
                 .build();
-
-        // 3. Replay cookie sau khi backend đã khởi động lại -> Vẫn phải bị từ chối 401
         newMockMvc.perform(get("/api/me")
                         .cookie(new Cookie(AuthSessionCookieConfig.SESSION_COOKIE_NAME, fixture.rawSessionCookie())))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.maLoi").value("CHUA_DANG_NHAP"));
     }
-
-    // =========================================================================
-    // 4. TS1-014 & TS1-016: Độc lập các phiên giữa các browser
-    // =========================================================================
-
     @Test
     @DisplayName("TS1-014 / TS1-016 / PHIEN-04: Đăng xuất ở browser A chỉ thu hồi phiên A; phiên B trên browser khác của cùng người dùng vẫn duy trì 200 OK")
     void logoutOnBrowserADoesNotRevokeActiveSessionOnBrowserB() throws Exception {
@@ -281,7 +238,6 @@ class AuthLogoutAndSessionRevocationTests {
 
         String csrfA = sessionLifecycleAdapter.issueSessionCsrfToken(sessionA.rawSessionCookie());
 
-        // 1. Logout phiên A trên browser A
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .header(AuthSessionCookieConfig.CSRF_HEADER_NAME, csrfA)
@@ -291,7 +247,6 @@ class AuthLogoutAndSessionRevocationTests {
                         ))
                 .andExpect(status().isOk());
 
-        // 2. Phiên A đã bị thu hồi -> Replay A trả 401
         mockMvc.perform(get("/api/me")
                         .cookie(new Cookie(AuthSessionCookieConfig.SESSION_COOKIE_NAME, sessionA.rawSessionCookie())))
                 .andExpect(status().isUnauthorized())
@@ -303,10 +258,6 @@ class AuthLogoutAndSessionRevocationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("multi.user@example.com"));
     }
-
-    // =========================================================================
-    // 5. Idempotent: Logout khi không có cookie hoặc cookie giả / đã thu hồi
-    // =========================================================================
 
     @Test
     @DisplayName("Idempotent / openapi: Logout khi không gửi cookie phiên (chưa đăng nhập hoặc cookie đã mất) vẫn trả 200 OK và cấp CSRF khách mới")
@@ -327,8 +278,6 @@ class AuthLogoutAndSessionRevocationTests {
     void repeatedLogoutCallsAreIdempotentAndSafe() throws Exception {
         ActiveSessionFixture fixture = seedActiveSession("idempotent@example.com", VaiTroTaiKhoan.NGUOI_DUNG);
         String sessionCsrf = sessionLifecycleAdapter.issueSessionCsrfToken(fixture.rawSessionCookie());
-
-        // Lần logout 1
         MvcResult firstLogout = mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .header(AuthSessionCookieConfig.CSRF_HEADER_NAME, sessionCsrf)
@@ -339,10 +288,7 @@ class AuthLogoutAndSessionRevocationTests {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        // Lấy token CSRF mới từ lần logout 1 để gửi cho lần logout 2
         String newAnonymousCsrf = sessionLifecycleAdapter.issueAnonymousCsrfToken();
-
-        // Lần logout 2 (gửi lại cookie đã thu hồi)
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .header(AuthSessionCookieConfig.CSRF_HEADER_NAME, newAnonymousCsrf)
@@ -358,7 +304,6 @@ class AuthLogoutAndSessionRevocationTests {
     @DisplayName("openapi / §3.2: Đăng xuất khi tài khoản bị khóa vẫn nhận 200 OK và thu hồi phiên thành công")
     void logoutOnLockedAccountSucceedsAndRevokesSession() throws Exception {
         ActiveSessionFixture fixture = seedActiveSession("locked.logout@example.com", VaiTroTaiKhoan.NGUOI_DUNG);
-        // Khóa tài khoản
         TaiKhoan lockedAccount = fixture.taiKhoan().capNhatTrangThai(TrangThaiTaiKhoan.BI_KHOA, Instant.now());
         taiKhoanRepository.save(lockedAccount);
 
@@ -374,14 +319,8 @@ class AuthLogoutAndSessionRevocationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trangThai").value("da_dang_xuat"));
 
-        // Phiên trong DB đã thu hồi
         assertThat(phienXacThucRepository.findById(fixture.phien().getId()).get().isDaThuHoi()).isTrue();
     }
-
-    // =========================================================================
-    // 6. Kiểm tra bảo vệ CSRF và Origin
-    // =========================================================================
-
     @Test
     @DisplayName("openapi / PHIEN-06: POST /api/auth/logout thiếu Origin hoặc Origin không hợp lệ bị 403 Forbidden")
     void logoutWithMissingOrDisallowedOriginRejectedWith403() throws Exception {
@@ -398,7 +337,6 @@ class AuthLogoutAndSessionRevocationTests {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.maLoi").value("CSRF_KHONG_HOP_LE"));
 
-        // Origin độc hại
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.ORIGIN, "https://attacker.site")
                         .header(AuthSessionCookieConfig.CSRF_HEADER_NAME, sessionCsrf)
@@ -409,7 +347,6 @@ class AuthLogoutAndSessionRevocationTests {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.maLoi").value("CSRF_KHONG_HOP_LE"));
 
-        // Phiên chưa bị thu hồi
         assertThat(phienXacThucRepository.findById(fixture.phien().getId()).get().isDaThuHoi()).isFalse();
     }
 
@@ -418,8 +355,6 @@ class AuthLogoutAndSessionRevocationTests {
     void logoutWithMissingOrInvalidCsrfTokenRejectedWith403() throws Exception {
         ActiveSessionFixture fixture = seedActiveSession("csrf.token@example.com", VaiTroTaiKhoan.NGUOI_DUNG);
         String sessionCsrf = sessionLifecycleAdapter.issueSessionCsrfToken(fixture.rawSessionCookie());
-
-        // Thiếu header X-CSRF-Token
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .cookie(
@@ -428,8 +363,6 @@ class AuthLogoutAndSessionRevocationTests {
                         ))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.maLoi").value("CSRF_KHONG_HOP_LE"));
-
-        // Header sai khác với cookie CSRF
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .header(AuthSessionCookieConfig.CSRF_HEADER_NAME, "token_sai_hoan_toan")
@@ -439,15 +372,8 @@ class AuthLogoutAndSessionRevocationTests {
                         ))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.maLoi").value("CSRF_KHONG_HOP_LE"));
-
-        // Phiên chưa bị thu hồi
         assertThat(phienXacThucRepository.findById(fixture.phien().getId()).get().isDaThuHoi()).isFalse();
     }
-
-    // =========================================================================
-    // 7. Lỗi kho lưu trữ trước commit
-    // =========================================================================
-
     @Test
     @DisplayName("openapi / §3.2: Khi kho lưu trữ phiên lỗi trước commit thu hồi, trả 503 TAM_GIAN_DOAN và KHÔNG xóa cookie")
     void databaseFailureBeforeCommitReturns503AndDoesNotClearCookie() throws Exception {

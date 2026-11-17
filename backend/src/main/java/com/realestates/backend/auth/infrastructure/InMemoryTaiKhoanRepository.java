@@ -11,10 +11,6 @@ import java.util.concurrent.ConcurrentMap;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
-/**
- * Kho lưu trữ Tài khoản an toàn đa luồng, đảm bảo ràng buộc duy nhất nguyên tử
- * trên email định danh (lower(email)) và supabase_auth_user_id theo AUTH-01 & TS1-007.
- */
 @Repository
 @ConditionalOnProperty(name = "app.repository.type", havingValue = "in-memory", matchIfMissing = true)
 public class InMemoryTaiKhoanRepository implements TaiKhoanRepository {
@@ -80,6 +76,58 @@ public class InMemoryTaiKhoanRepository implements TaiKhoanRepository {
         accountsByEmail.put(emailKey, taiKhoan);
         accountsBySupabaseId.put(taiKhoan.getSupabaseAuthUserId(), taiKhoan);
         return taiKhoan;
+    }
+
+    @Override
+    public synchronized boolean updateDongBoAuthCas(
+            UUID taiKhoanId,
+            UUID expectedMaThaoTacAuth,
+            String newTrangThaiDongBoAuth,
+            UUID newMaThaoTacAuth,
+            java.time.Instant now
+    ) {
+        if (taiKhoanId == null) {
+            return false;
+        }
+        TaiKhoan current = accountsById.get(taiKhoanId);
+        if (current == null) {
+            return false;
+        }
+        if (!java.util.Objects.equals(current.getMaThaoTacAuth(), expectedMaThaoTacAuth)) {
+            return false;
+        }
+        java.time.Instant timestamp = now != null ? now : java.time.Instant.now();
+        TaiKhoan updated = TaiKhoan.khoiPhucTuLuuTru(
+                current.getId(),
+                current.getSupabaseAuthUserId(),
+                current.getEmail(),
+                current.getHoTen(),
+                current.getSoDienThoai(),
+                current.getVaiTro(),
+                current.getTrangThai(),
+                current.isEmailDaXacMinh(),
+                current.getMocThuHoi(),
+                newTrangThaiDongBoAuth,
+                newMaThaoTacAuth,
+                timestamp,
+                current.getTaoLuc(),
+                timestamp
+        );
+        save(updated);
+        return true;
+    }
+
+    @Override
+    public synchronized java.util.List<TaiKhoan> findPendingAuthSyncAccounts(java.time.Instant olderThan) {
+        java.util.List<TaiKhoan> result = new java.util.ArrayList<>();
+        for (TaiKhoan account : accountsById.values()) {
+            if (("dang_dat_lai".equals(account.getTrangThaiDongBoAuth()) || "can_khoi_phuc".equals(account.getTrangThaiDongBoAuth()))
+                    && (olderThan == null || !account.getCapNhatAuthLuc().isAfter(olderThan))) {
+                result.add(account);
+            }
+        }
+        result.sort((a, b) -> a.getCapNhatAuthLuc().compareTo(b.getCapNhatAuthLuc()));
+        return result;
     }
 
     public synchronized void clear() {

@@ -78,4 +78,47 @@ public interface SupabaseAuthPort {
     default void revokeProviderSessionLocal(String accessToken) {
         // Mặc định no-op cho các stub đơn giản
     }
+
+    /**
+     * Kích hoạt gửi email khôi phục mật khẩu (type = recovery) qua Supabase Auth (POST /auth/v1/recover)
+     * theo UC-29, FR-15, AC-15.3 và openapi-sprint-1.yaml.
+     * Phản hồi trung tính: email không tồn tại vẫn tiếp nhận 202, không tạo tài khoản mới.
+     */
+    default void sendPasswordRecoveryEmail(String normalizedEmail) {
+        throw new UnsupportedOperationException("Chưa cài đặt sendPasswordRecoveryEmail");
+    }
+
+    /**
+     * Xác minh mã liên kết recovery một lần (token_hash) với mục đích cố định type = "recovery"
+     * theo UC-29 / FR-15 / AC-15.3 / AC-15.4 / §5.2.
+     * Tuyệt đối không nhận type từ phía client. Nếu provider phát hành session tạm, adapter tự thu hồi cục bộ.
+     */
+    default SupabaseVerifiedIdentity verifyPasswordRecoveryTokenHash(String tokenHash) {
+        throw new UnsupportedOperationException("Chưa cài đặt verifyPasswordRecoveryTokenHash");
+    }
+
+    /**
+     * Xác minh mã OTP 6 chữ số (0-9) đi kèm email để khôi phục mật khẩu (type = "recovery").
+     */
+    default SupabaseVerifiedIdentity verifyPasswordRecoveryOtp(String email, String otp) {
+        return verifyPasswordRecoveryTokenHash(otp);
+    }
+
+    /**
+     * Cập nhật mật khẩu mới và dấu app_metadata.se214_password_reset_operation = operationId
+     * qua Supabase Admin API (PUT /auth/v1/admin/users/{user_id}) trong cùng transaction provider
+     * (thiet-ke-phien-sprint-1.md §5.1, §5.2 bước 3).
+     */
+    default void updatePasswordWithResetMarker(UUID supabaseAuthUserId, String rawPassword, UUID operationId) {
+        throw new UnsupportedOperationException("Chưa cài đặt updatePasswordWithResetMarker");
+    }
+
+    /**
+     * Tra cứu dấu app_metadata.se214_password_reset_operation của người dùng qua Supabase Admin API
+     * (GET /auth/v1/admin/users/{user_id}) phục vụ worker đối chiếu và phục hồi khi lỗi giữa Auth-DB
+     * (thiet-ke-phien-sprint-1.md §5.3, §5.4, PHIEN-10).
+     */
+    default java.util.Optional<String> getPasswordResetMarker(UUID supabaseAuthUserId) {
+        return java.util.Optional.empty();
+    }
 }

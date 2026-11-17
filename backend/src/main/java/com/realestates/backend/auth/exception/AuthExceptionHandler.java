@@ -81,6 +81,20 @@ public class AuthExceptionHandler {
         );
     }
 
+    @ExceptionHandler(PasswordPolicyViolationException.class)
+    public ResponseEntity<LoiApiResponse> handlePasswordPolicyViolation(
+            PasswordPolicyViolationException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                ex.getTruongLoi(),
+                request
+        );
+    }
+
     @ExceptionHandler(InvalidVerificationLinkException.class)
     public ResponseEntity<LoiApiResponse> handleInvalidVerificationLink(
             InvalidVerificationLinkException ex,
@@ -151,6 +165,20 @@ public class AuthExceptionHandler {
         );
     }
 
+    @ExceptionHandler(PasswordResetInProgressException.class)
+    public ResponseEntity<LoiApiResponse> handlePasswordResetInProgress(
+            PasswordResetInProgressException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.CONFLICT,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
     @ExceptionHandler(EmailAlreadyExistsException.class)
     public ResponseEntity<LoiApiResponse> handleEmailAlreadyExists(
             EmailAlreadyExistsException ex,
@@ -204,6 +232,20 @@ public class AuthExceptionHandler {
     @ExceptionHandler(VerificationSyncIncompleteException.class)
     public ResponseEntity<LoiApiResponse> handleVerificationSyncIncomplete(
             VerificationSyncIncompleteException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(PasswordResetSyncIncompleteException.class)
+    public ResponseEntity<LoiApiResponse> handlePasswordResetSyncIncomplete(
+            PasswordResetSyncIncompleteException ex,
             HttpServletRequest request
     ) {
         return buildErrorResponse(
