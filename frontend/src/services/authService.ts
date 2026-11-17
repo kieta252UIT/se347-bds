@@ -66,18 +66,7 @@ export const authService = {
    * Xác nhận OTP và đặt lại mật khẩu mới (POST /api/auth/password/reset)
    */
   async resetPassword(payload: DatLaiMatKhauPayload): Promise<XacMinhKetQua> {
-    const tokenHash = (payload as unknown as { tokenHash?: string }).tokenHash || payload.otp;
-    const body: Record<string, string> = {
-      tokenHash,
-      matKhauMoi: payload.matKhauMoi,
-    };
-    if (payload.email) {
-      body.email = payload.email.trim().toLowerCase();
-    }
-    if (payload.otp) {
-      body.otp = payload.otp.trim();
-    }
-    const response = await api.post<XacMinhKetQua>("/auth/password/reset", body);
+    const response = await api.post<XacMinhKetQua>("/auth/password/reset", payload);
     return response.data;
   },
 };

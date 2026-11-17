@@ -17,52 +17,13 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
   withCredentials: true,
-  xsrfCookieName: "se214_csrf",
-  xsrfHeaderName: "X-CSRF-Token",
+  xsrfCookieName: "XSRF-TOKEN",
+  xsrfHeaderName: "X-XSRF-TOKEN",
 });
 
-let cachedCsrfToken: string | null = null;
-let csrfRequestPromise: Promise<string> | null = null;
-
-async function fetchCsrfToken(): Promise<string> {
-  if (cachedCsrfToken) return cachedCsrfToken;
-  if (!csrfRequestPromise) {
-    csrfRequestPromise = axios
-      .get<{ csrfToken: string }>("/api/csrf", { withCredentials: true })
-      .then((res) => {
-        cachedCsrfToken = res.data.csrfToken;
-        csrfRequestPromise = null;
-        return cachedCsrfToken;
-      })
-      .catch((err) => {
-        csrfRequestPromise = null;
-        throw err;
-      });
-  }
-  return csrfRequestPromise;
-}
-
-// Request Interceptor: Tự động đính kèm X-CSRF-Token cho các phương thức thay đổi trạng thái
+// Request Interceptor: Chuẩn bị header nếu cần
 api.interceptors.request.use(
-  async (config) => {
-    const method = config.method?.toUpperCase();
-    if (method && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-      const url = config.url || "";
-      if (!url.includes("/csrf")) {
-        try {
-          const token = await fetchCsrfToken();
-          if (token && config.headers) {
-            if (typeof config.headers.set === "function") {
-              config.headers.set("X-CSRF-Token", token);
-            } else {
-              config.headers["X-CSRF-Token"] = token;
-            }
-          }
-        } catch (e) {
-          console.warn("Chưa thể lấy CSRF token:", e);
-        }
-      }
-    }
+  (config) => {
     return config;
   },
   (error) => {
@@ -73,18 +34,11 @@ api.interceptors.request.use(
 // Response Interceptor: Xử lý tập trung mã lỗi HTTP và chuẩn hóa dữ liệu lỗi
 api.interceptors.response.use(
   (response) => {
-    if (response.data && typeof response.data === "object" && "csrfToken" in response.data) {
-      cachedCsrfToken = (response.data as { csrfToken: string }).csrfToken;
-    }
     return response;
   },
   (error: AxiosError<ApiErrorResponse & { maLoi?: string; thongDiep?: string }>) => {
     const status = error.response?.status;
     const responseData = error.response?.data;
-
-    if (status === 403 && responseData?.maLoi === "CSRF_KHONG_HOP_LE") {
-      cachedCsrfToken = null;
-    }
 
     const normalizedError: ApiErrorResponse = {
       status: status || 500,
