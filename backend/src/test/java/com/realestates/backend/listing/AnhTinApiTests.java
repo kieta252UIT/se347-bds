@@ -16,6 +16,7 @@ import com.realestates.backend.auth.domain.TaiKhoan;
 import com.realestates.backend.auth.domain.TrangThaiTaiKhoan;
 import com.realestates.backend.auth.domain.VaiTroTaiKhoan;
 import com.realestates.backend.auth.controller.CsrfAndOriginProtectionFilter;
+import com.realestates.backend.auth.exception.AuthExceptionHandler;
 import com.realestates.backend.auth.exception.AuthProviderUnavailableException;
 import com.realestates.backend.auth.exception.AuthSessionSecurityExceptionHandler;
 import com.realestates.backend.auth.infrastructure.DefaultAuthBrowserSessionLifecycleAdapter;
@@ -86,7 +87,7 @@ class AnhTinApiTests {
     private MockMvc taoMockMvc(AnhTinRepository anhTinRepository, AnhStoragePort anhStoragePort) {
         AnhTinService anhTinService = new AnhTinService(permissionAndCsrfService, anhTinRepository, anhStoragePort);
         return MockMvcBuilders.standaloneSetup(new AnhTinController(anhTinService, cookieConfig))
-                .setControllerAdvice(new AuthSessionSecurityExceptionHandler(), new GlobalApiExceptionHandler())
+                .setControllerAdvice(new AuthSessionSecurityExceptionHandler(), new AuthExceptionHandler(), new GlobalApiExceptionHandler())
                 .addFilters(new CsrfAndOriginProtectionFilter(permissionAndCsrfService, cookieConfig))
                 .build();
     }
@@ -108,11 +109,13 @@ class AnhTinApiTests {
         String anhId = JsonPath.read(json, "$.id");
         assertThat(JsonPath.<String>read(json, "$.duongDanDoc")).isEqualTo("/api/images/" + anhId + "/content");
         assertThat(khoAnh.doiTuong.get(anhId + ".png")).isEqualTo(png);
+        assertThat(khoAnh.doiTuong.containsKey(anhId + "-display.png")).isTrue();
 
         Optional<AnhTinTruyCap> daLuu = anhTinRepository.timAnhDeDoc(UUID.fromString(anhId));
         assertThat(daLuu).isPresent();
         assertThat(daLuu.get().chuAnhId()).isEqualTo(nguoiDung.taiKhoan().getId());
         assertThat(daLuu.get().trangThaiAnh()).isEqualTo("tam");
+        assertThat(daLuu.get().khoaAnhHienThi()).isEqualTo(anhId + "-display.png");
     }
 
     @Test
@@ -244,13 +247,18 @@ class AnhTinApiTests {
         Fixture nguoiDung = taoNguoiDung(VaiTroTaiKhoan.NGUOI_DUNG);
         AnhTinRepository khoLoi = new AnhTinRepository() {
             @Override
-            public void luuAnhTam(UUID id, UUID chuId, String khoaTepGoc, DinhDangAnh dinhDang, long kichThuocByte) {
+            public void luuAnhTam(UUID id, UUID chuId, String khoaTepGoc, String khoaAnhHienThi, DinhDangAnh dinhDang, long kichThuocByte) {
                 throw new IllegalStateException("Mất kết nối cơ sở dữ liệu");
             }
 
             @Override
             public Optional<AnhTinTruyCap> timAnhDeDoc(UUID anhId) {
                 return Optional.empty();
+            }
+
+            @Override
+            public boolean coThamChieuKhoa(String khoaDoiTuong) {
+                return false;
             }
         };
         MockMvc mockMvcKhoLoi = taoMockMvc(khoLoi, khoAnh);
@@ -327,6 +335,77 @@ class AnhTinApiTests {
                         .cookie(new Cookie(AuthSessionCookieConfig.SESSION_COOKIE_NAME, chu.rawSessionCookie())))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.maLoi").value("TAM_GIAN_DOAN"));
+    }
+
+    @Test
+    @DisplayName("Bù trừ xóa đối tượng trên Storage khi ghi cơ sở dữ liệu gặp lỗi")
+    void buTruXoaStorageKhiGhiRepoLoi() throws Exception {
+        Fixture nguoiDung = taoNguoiDung(VaiTroTaiKhoan.NGUOI_DUNG);
+        AnhTinRepository repoLoi = new InMemoryAnhTinRepository() {
+            @Override
+            public void luuAnhTam(UUID id, UUID chuId, String khoaTepGoc, String khoaAnhHienThi, DinhDangAnh dinhDang, long kichThuocByte) {
+                throw new AuthProviderUnavailableException("DB gặp sự cố.");
+            }
+        };
+        MockMvc mvcVoiRepoLoi = taoMockMvc(repoLoi, khoAnh);
+
+        mvcVoiRepoLoi.perform(yeuCauTai(nguoiDung.rawSessionCookie(), tep("tep", "anh.png", "image/png", taoAnh("png"))))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.maLoi").value("TAM_GIAN_DOAN"));
+
+        // Xác nhận cơ chế bù trừ đã xóa sạch các object vừa tải lên storage
+        assertThat(khoAnh.doiTuong.isEmpty()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Gửi sai Content-Type ở endpoint tải ảnh trả về thông điệp kiểu nội dung không hỗ trợ")
+    void saiContentTypeTra400VoiThongDiepDung() throws Exception {
+        Fixture nguoiDung = taoNguoiDung(VaiTroTaiKhoan.NGUOI_DUNG);
+        String csrf = sessionLifecycleAdapter.issueSessionCsrfToken(nguoiDung.rawSessionCookie());
+
+        mockMvc.perform(post("/api/images")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"tep\": \"test\"}")
+                        .header(HttpHeaders.ORIGIN, ORIGIN)
+                        .header(AuthSessionCookieConfig.CSRF_HEADER_NAME, csrf)
+                        .cookie(new Cookie(AuthSessionCookieConfig.CSRF_COOKIE_NAME, csrf))
+                        .cookie(new Cookie(AuthSessionCookieConfig.SESSION_COOKIE_NAME, nguoiDung.rawSessionCookie())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.maLoi").value("DU_LIEU_KHONG_HOP_LE"))
+                .andExpect(jsonPath("$.thongDiep").value("Kiểu nội dung yêu cầu không được hỗ trợ."));
+    }
+
+    @Test
+    @DisplayName("Kiểm lại quyền trong transaction: tài khoản bị khóa giữa chừng thì từ chối ghi và dọn Storage")
+    void kiemLaiQuyenKhiTaiKhoanBiKhoaGiuaChung() throws Exception {
+        Fixture nguoiDung = taoNguoiDung(VaiTroTaiKhoan.NGUOI_DUNG);
+
+        khoAnh.hanhDongKhiLuu = () -> {
+            TaiKhoan current = nguoiDung.taiKhoan();
+            TaiKhoan biKhoa = TaiKhoan.khoiPhucTuLuuTru(
+                    current.getId(),
+                    current.getSupabaseAuthUserId(),
+                    current.getEmail(),
+                    current.getHoTen(),
+                    current.getSoDienThoai(),
+                    current.getVaiTro(),
+                    TrangThaiTaiKhoan.BI_KHOA,
+                    current.isEmailDaXacMinh(),
+                    current.getMocThuHoi(),
+                    current.getTrangThaiDongBoAuth(),
+                    current.getMaThaoTacAuth(),
+                    current.getCapNhatAuthLuc(),
+                    current.getTaoLuc(),
+                    Instant.now()
+            );
+            taiKhoanRepository.save(biKhoa);
+        };
+
+        mockMvc.perform(yeuCauTai(nguoiDung.rawSessionCookie(), tep("tep", "anh.png", "image/png", taoAnh("png"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.maLoi").value("TAI_KHOAN_BI_KHOA"));
+
+        assertThat(khoAnh.doiTuong.isEmpty()).isTrue();
     }
 
     private String taiAnhLen(Fixture nguoiTai, byte[] noiDung) throws Exception {
@@ -417,6 +496,7 @@ class AnhTinApiTests {
 
         private final Map<String, byte[]> doiTuong = new ConcurrentHashMap<>();
         private volatile boolean loi;
+        private volatile Runnable hanhDongKhiLuu;
 
         @Override
         public void luu(String khoaDoiTuong, byte[] noiDung, String mimeType) {
@@ -424,6 +504,9 @@ class AnhTinApiTests {
                 throw new AuthProviderUnavailableException("Storage giả lập đang lỗi.");
             }
             doiTuong.put(khoaDoiTuong, noiDung);
+            if (hanhDongKhiLuu != null) {
+                hanhDongKhiLuu.run();
+            }
         }
 
         @Override
@@ -433,6 +516,13 @@ class AnhTinApiTests {
                 throw new AuthProviderUnavailableException("Storage giả lập không đọc được.");
             }
             return noiDung;
+        }
+
+        @Override
+        public void xoa(String khoaDoiTuong) {
+            if (khoaDoiTuong != null) {
+                doiTuong.remove(khoaDoiTuong);
+            }
         }
     }
 }

@@ -17,13 +17,20 @@ public class InMemoryAnhTinRepository implements AnhTinRepository {
     private final ConcurrentMap<UUID, AnhTinTruyCap> anhTheoId = new ConcurrentHashMap<>();
 
     @Override
-    public void luuAnhTam(UUID id, UUID chuId, String khoaTepGoc, DinhDangAnh dinhDang, long kichThuocByte) {
+    public void luuAnhTam(
+            UUID id,
+            UUID chuId,
+            String khoaTepGoc,
+            String khoaAnhHienThi,
+            DinhDangAnh dinhDang,
+            long kichThuocByte
+    ) {
         anhTheoId.put(id, new AnhTinTruyCap(
                 id,
                 chuId,
                 AnhTinTruyCap.ANH_TAM,
                 khoaTepGoc,
-                null,
+                khoaAnhHienThi,
                 dinhDang.getMimeType(),
                 null,
                 null,
@@ -37,5 +44,14 @@ public class InMemoryAnhTinRepository implements AnhTinRepository {
     public Optional<AnhTinTruyCap> timAnhDeDoc(UUID anhId) {
         return Optional.ofNullable(anhTheoId.get(anhId));
     }
-}
 
+    @Override
+    public boolean coThamChieuKhoa(String khoaDoiTuong) {
+        if (khoaDoiTuong == null || khoaDoiTuong.isBlank()) {
+            return false;
+        }
+        return anhTheoId.values().stream().anyMatch(a ->
+                khoaDoiTuong.equals(a.khoaTepGoc()) || khoaDoiTuong.equals(a.khoaAnhHienThi())
+        );
+    }
+}

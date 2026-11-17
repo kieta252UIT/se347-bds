@@ -16,8 +16,8 @@ import org.springframework.stereotype.Repository;
 public class PostgreSqlAnhTinRepository implements AnhTinRepository {
 
     private static final String SQL_LUU_ANH_TAM = """
-            INSERT INTO se214.anh_tin (id, chu_id, khoa_tep_goc, mime_type, kich_thuoc_byte, trang_thai)
-            VALUES (?, ?, ?, ?, ?, 'tam')
+            INSERT INTO se214.anh_tin (id, chu_id, khoa_tep_goc, khoa_anh_hien_thi, mime_type, kich_thuoc_byte, trang_thai)
+            VALUES (?, ?, ?, ?, ?, ?, 'tam')
             """;
 
     private static final String SQL_TIM_ANH_DE_DOC = """
@@ -37,6 +37,13 @@ public class PostgreSqlAnhTinRepository implements AnhTinRepository {
             LEFT JOIN se214.tin_bat_dong_san t ON t.id = pb.tin_id
             LEFT JOIN se214.tai_khoan c ON c.id = t.chu_id
             WHERE a.id = ?
+            """;
+
+    private static final String SQL_CO_THAM_CHIEU_KHOA = """
+            SELECT EXISTS (
+                SELECT 1 FROM se214.anh_tin
+                WHERE khoa_tep_goc = ? OR khoa_anh_hien_thi = ?
+            )
             """;
 
     private static final RowMapper<AnhTinTruyCap> ANH_ROW_MAPPER = (rs, rowNum) -> new AnhTinTruyCap(
@@ -60,13 +67,28 @@ public class PostgreSqlAnhTinRepository implements AnhTinRepository {
     }
 
     @Override
-    public void luuAnhTam(UUID id, UUID chuId, String khoaTepGoc, DinhDangAnh dinhDang, long kichThuocByte) {
-        jdbcTemplate.update(SQL_LUU_ANH_TAM, id, chuId, khoaTepGoc, dinhDang.getMimeType(), kichThuocByte);
+    public void luuAnhTam(
+            UUID id,
+            UUID chuId,
+            String khoaTepGoc,
+            String khoaAnhHienThi,
+            DinhDangAnh dinhDang,
+            long kichThuocByte
+    ) {
+        jdbcTemplate.update(SQL_LUU_ANH_TAM, id, chuId, khoaTepGoc, khoaAnhHienThi, dinhDang.getMimeType(), kichThuocByte);
     }
 
     @Override
     public Optional<AnhTinTruyCap> timAnhDeDoc(UUID anhId) {
         return jdbcTemplate.query(SQL_TIM_ANH_DE_DOC, ANH_ROW_MAPPER, anhId).stream().findFirst();
     }
-}
 
+    @Override
+    public boolean coThamChieuKhoa(String khoaDoiTuong) {
+        if (khoaDoiTuong == null || khoaDoiTuong.isBlank()) {
+            return false;
+        }
+        Boolean co = jdbcTemplate.queryForObject(SQL_CO_THAM_CHIEU_KHOA, Boolean.class, khoaDoiTuong, khoaDoiTuong);
+        return Boolean.TRUE.equals(co);
+    }
+}

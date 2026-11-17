@@ -94,5 +94,44 @@ class KiemTraAnhUnitTest {
 
         assertThat(KiemTraAnh.nhanDang(lon)).isEmpty();
     }
+
+    @Test
+    @DisplayName("Giải mã có giới hạn thành công với ảnh PNG, JPEG và WebP thật")
+    void giaiMaThanhCongVoiAnhThat() throws IOException {
+        byte[] png = taoAnh("png");
+        byte[] jpeg = taoAnh("jpg");
+        byte[] webp = taoWebp();
+
+        assertThat(KiemTraAnh.giaiMaCoGioiHan(png)).isPresent();
+        assertThat(KiemTraAnh.giaiMaCoGioiHan(jpeg)).isPresent();
+        assertThat(KiemTraAnh.giaiMaCoGioiHan(webp)).isPresent();
+    }
+
+    @Test
+    @DisplayName("Tạo bản hiển thị tái mã hóa ảnh PNG, JPEG và WebP thành công")
+    void taoBanHienThiThanhCong() throws IOException {
+        BufferedImage img = new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB);
+
+        KiemTraAnh.BanAnhHienThi banPng = KiemTraAnh.taoBanHienThi(img, DinhDangAnh.PNG);
+        assertThat(banPng.mimeType()).isEqualTo("image/png");
+        assertThat(banPng.duoiTep()).isEqualTo("png");
+        assertThat(banPng.noiDung()).isNotEmpty();
+
+        KiemTraAnh.BanAnhHienThi banJpg = KiemTraAnh.taoBanHienThi(img, DinhDangAnh.JPEG);
+        assertThat(banJpg.mimeType()).isEqualTo("image/jpeg");
+        assertThat(banJpg.duoiTep()).isEqualTo("jpg");
+        assertThat(banJpg.noiDung()).isNotEmpty();
+
+        KiemTraAnh.BanAnhHienThi banWebp = KiemTraAnh.taoBanHienThi(img, DinhDangAnh.WEBP);
+        assertThat(banWebp.noiDung()).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("Dữ liệu hỏng hoặc rác không thể giải mã")
+    void duLieuHongKhongGiaiMaDuoc() {
+        assertThat(KiemTraAnh.giaiMaCoGioiHan(null)).isEmpty();
+        assertThat(KiemTraAnh.giaiMaCoGioiHan(new byte[0])).isEmpty();
+        assertThat(KiemTraAnh.giaiMaCoGioiHan(new byte[]{1, 2, 3, 4})).isEmpty();
+    }
 }
 

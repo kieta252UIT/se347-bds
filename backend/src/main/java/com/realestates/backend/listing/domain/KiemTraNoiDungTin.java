@@ -39,6 +39,11 @@ public final class KiemTraNoiDungTin {
     );
 
     private static final Pattern SO_THAP_PHAN = Pattern.compile("(0|[1-9][0-9]*)(\\.[0-9]+)?");
+    private static final Pattern SO_THAP_PHAN_CO_DAU = Pattern.compile("^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$");
+    private static final BigDecimal VI_DO_TOI_THIEU = new BigDecimal("-90");
+    private static final BigDecimal VI_DO_TOI_DA = new BigDecimal("90");
+    private static final BigDecimal KINH_DO_TOI_THIEU = new BigDecimal("-180");
+    private static final BigDecimal KINH_DO_TOI_DA = new BigDecimal("180");
 
     public record KetQua(NoiDungTinDauVao noiDung, List<LoiTruongNoiDung> loi) {
 
@@ -69,8 +74,8 @@ public final class KiemTraNoiDungTin {
         BigDecimal dienTich = docSoDuong(du, TRUONG_DIEN_TICH, "Diện tích", loi);
         String diaChi = docChuoiBatBuoc(du, TRUONG_DIA_CHI, loi);
         String khuVuc = docChuoiBatBuoc(du, TRUONG_KHU_VUC, loi);
-        String viDo = docChuoiBatBuoc(du, TRUONG_VI_DO, loi);
-        String kinhDo = docChuoiBatBuoc(du, TRUONG_KINH_DO, loi);
+        String viDo = docToaDo(du, TRUONG_VI_DO, "Vĩ độ", VI_DO_TOI_THIEU, VI_DO_TOI_DA, loi);
+        String kinhDo = docToaDo(du, TRUONG_KINH_DO, "Kinh độ", KINH_DO_TOI_THIEU, KINH_DO_TOI_DA, loi);
 
         if (!loi.isEmpty()) {
             return new KetQua(null, List.copyOf(loi));
@@ -173,6 +178,36 @@ public final class KiemTraNoiDungTin {
             return null;
         }
         return donVi.get();
+    }
+
+    private static String docToaDo(
+            Map<String, Object> du,
+            String truong,
+            String ten,
+            BigDecimal toiThieu,
+            BigDecimal toiDa,
+            List<LoiTruongNoiDung> loi
+    ) {
+        String chuoi = docChuoiBatBuoc(du, truong, loi);
+        if (chuoi == null) {
+            return null;
+        }
+        if (!SO_THAP_PHAN_CO_DAU.matcher(chuoi).matches()) {
+            loi.add(new LoiTruongNoiDung(
+                    truong,
+                    ten + " phải là số thập phân hữu hạn dạng chuỗi, dùng dấu chấm, không số mũ."
+            ));
+            return null;
+        }
+        BigDecimal giaTri = new BigDecimal(chuoi);
+        if (giaTri.compareTo(toiThieu) < 0 || giaTri.compareTo(toiDa) > 0) {
+            loi.add(new LoiTruongNoiDung(
+                    truong,
+                    ten + " phải nằm trong đoạn [" + toiThieu.toPlainString() + ", " + toiDa.toPlainString() + "]."
+            ));
+            return null;
+        }
+        return chuoi;
     }
 }
 

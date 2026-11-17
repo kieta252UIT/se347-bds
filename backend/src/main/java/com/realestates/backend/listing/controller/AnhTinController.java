@@ -1,7 +1,6 @@
 package com.realestates.backend.listing.controller;
 
 import com.realestates.backend.auth.controller.AuthCsrfAndMeController;
-import com.realestates.backend.auth.domain.PrincipalPhienHienTai;
 import com.realestates.backend.auth.dto.FieldErrorItem;
 import com.realestates.backend.auth.exception.AuthExceptionHandler;
 import com.realestates.backend.auth.exception.AuthValidationException;
@@ -49,9 +48,8 @@ public class AnhTinController {
                 request,
                 authSessionCookieConfig.getSessionCookieName()
         );
-        PrincipalPhienHienTai nguoiTai = anhTinService.xacThucNguoiTaiAnh(rawSessionCookie);
         MultipartFile tep = layDungMotTep(request);
-        AnhTamKetQua ketQua = anhTinService.taiAnhTam(nguoiTai, docNoiDung(tep));
+        AnhTamKetQua ketQua = anhTinService.taiAnhTam(rawSessionCookie, docNoiDung(tep));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.VARY, HttpHeaders.COOKIE)

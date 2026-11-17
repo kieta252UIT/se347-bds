@@ -6,6 +6,7 @@ import com.realestates.backend.listing.application.AnhStoragePort;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -13,6 +14,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 @Component
+@ConditionalOnProperty(name = "app.repository.type", havingValue = "postgres")
 public class SupabaseStorageRestClientAdapter implements AnhStoragePort {
 
     private static final String THONG_DIEP_GIAN_DOAN = "Dịch vụ lưu trữ ảnh đang tạm gián đoạn. Vui lòng thử lại sau.";
@@ -90,5 +92,23 @@ public class SupabaseStorageRestClientAdapter implements AnhStoragePort {
         }
         return noiDung;
     }
-}
 
+    @Override
+    public void xoa(String khoaDoiTuong) {
+        String baseUrl = properties.getNormalizedBaseUrl();
+        String serviceRoleKey = properties.getServiceRoleKey();
+        if (baseUrl.isBlank() || serviceRoleKey == null || serviceRoleKey.isBlank()) {
+            throw new AuthProviderUnavailableException(THONG_DIEP_GIAN_DOAN);
+        }
+        try {
+            restClient.delete()
+                    .uri(baseUrl + "/storage/v1/object/" + bucket + "/" + khoaDoiTuong)
+                    .header("apikey", serviceRoleKey.trim())
+                    .header("Authorization", "Bearer " + serviceRoleKey.trim())
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException ex) {
+            throw new AuthProviderUnavailableException(THONG_DIEP_GIAN_DOAN, ex);
+        }
+    }
+}

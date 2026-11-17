@@ -209,5 +209,39 @@ class KiemTraNoiDungTinUnitTest {
         assertThat(cacTruongLoi(KiemTraNoiDungTin.kiemTra(duLieu)))
                 .containsExactly("tieuDe", "giaGoc", "dienTichM2");
     }
+
+    @Test
+    @DisplayName("Vĩ độ trong [-90, 90] hợp lệ; ngoài miền hoặc sai định dạng bị từ chối")
+    void viDoHopLeVaKhongHopLe() {
+        for (String viDoDung : List.of("-90", "90", "0", "-0", "10.7769", "-12.345")) {
+            Map<String, Object> hopLe = duLieuHopLe();
+            hopLe.put("viDo", viDoDung);
+            assertThat(KiemTraNoiDungTin.kiemTra(hopLe).hopLe()).isTrue();
+        }
+
+        List<Object> cacGiaTriSai = List.of("-90.0001", "90.0001", "91", "-91", "abc", "NaN", "Infinity", "1e2", "10,77", 10.5);
+        for (Object giaTriSai : cacGiaTriSai) {
+            Map<String, Object> duLieu = duLieuHopLe();
+            duLieu.put("viDo", giaTriSai);
+            assertThat(cacTruongLoi(KiemTraNoiDungTin.kiemTra(duLieu))).containsExactly("viDo");
+        }
+    }
+
+    @Test
+    @DisplayName("Kinh độ trong [-180, 180] hợp lệ; ngoài miền hoặc sai định dạng bị từ chối")
+    void kinhDoHopLeVaKhongHopLe() {
+        for (String kinhDoDung : List.of("-180", "180", "0", "-0", "106.7009", "-120.5")) {
+            Map<String, Object> hopLe = duLieuHopLe();
+            hopLe.put("kinhDo", kinhDoDung);
+            assertThat(KiemTraNoiDungTin.kiemTra(hopLe).hopLe()).isTrue();
+        }
+
+        List<Object> cacGiaTriSai = List.of("-180.0001", "180.0001", "181", "-181", "abc", "NaN", "Infinity", "1e2", "106,7", 106.7);
+        for (Object giaTriSai : cacGiaTriSai) {
+            Map<String, Object> duLieu = duLieuHopLe();
+            duLieu.put("kinhDo", giaTriSai);
+            assertThat(cacTruongLoi(KiemTraNoiDungTin.kiemTra(duLieu))).containsExactly("kinhDo");
+        }
+    }
 }
 

@@ -1,11 +1,26 @@
 package com.realestates.backend.listing.domain;
 
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.zip.CRC32;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 
 public final class KiemTraAnh {
 
     public static final long KICH_THUOC_TOI_DA_BYTE = 10_000_000L;
+    public static final int MAX_CHIEU_RONG = 4096;
+    public static final int MAX_CHIEU_CAO = 4096;
+    public static final long MAX_TONG_SO_PIXEL = 16_000_000L;
+
+    public record BanAnhHienThi(byte[] noiDung, String duoiTep, String mimeType) {
+    }
 
     private static final byte[] CHU_KY_PNG = {
             (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
@@ -32,6 +47,64 @@ public final class KiemTraAnh {
             return Optional.of(DinhDangAnh.WEBP);
         }
         return Optional.empty();
+    }
+
+    public static Optional<BufferedImage> giaiMaCoGioiHan(byte[] noiDung) {
+        if (noiDung == null || !kichThuocHopLe(noiDung.length)) {
+            return Optional.empty();
+        }
+        try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(noiDung))) {
+            if (iis == null) {
+                return Optional.empty();
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                return Optional.empty();
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(iis, true, true);
+                int rong = reader.getWidth(0);
+                int cao = reader.getHeight(0);
+                if (rong <= 0 || cao <= 0 || rong > MAX_CHIEU_RONG || cao > MAX_CHIEU_CAO
+                        || ((long) rong * cao) > MAX_TONG_SO_PIXEL) {
+                    return Optional.empty();
+                }
+                BufferedImage image = reader.read(0);
+                if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
+                    return Optional.empty();
+                }
+                return Optional.of(image);
+            } finally {
+                reader.dispose();
+            }
+        } catch (Exception ex) {
+            return Optional.empty();
+        }
+    }
+
+    public static BanAnhHienThi taoBanHienThi(BufferedImage image, DinhDangAnh dinhDangGoc) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        if (dinhDangGoc == DinhDangAnh.PNG) {
+            ImageIO.write(image, "png", out);
+            return new BanAnhHienThi(out.toByteArray(), "png", "image/png");
+        } else {
+            boolean coAlpha = image.getColorModel() != null && image.getColorModel().hasAlpha();
+            if (coAlpha) {
+                ImageIO.write(image, "png", out);
+                return new BanAnhHienThi(out.toByteArray(), "png", "image/png");
+            } else {
+                BufferedImage rgbImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+                Graphics2D g = rgbImage.createGraphics();
+                try {
+                    g.drawImage(image, 0, 0, null);
+                } finally {
+                    g.dispose();
+                }
+                ImageIO.write(rgbImage, "jpg", out);
+                return new BanAnhHienThi(out.toByteArray(), "jpg", "image/jpeg");
+            }
+        }
     }
 
     private static boolean laPngHopLe(byte[] d) {
@@ -174,7 +247,27 @@ public final class KiemTraAnh {
             return doDaiKhoi >= 5 && (d[20] & 0xFF) == 0x2F;
         }
         if (khop(d, 12, "VP8X")) {
-            return doDaiKhoi >= 10;
+            if (doDaiKhoi != 10 || d.length < 30) {
+                return false;
+            }
+            int canvasWidth = 1 + ((d[24] & 0xFF) | ((d[25] & 0xFF) << 8) | ((d[26] & 0xFF) << 16));
+            int canvasHeight = 1 + ((d[27] & 0xFF) | ((d[28] & 0xFF) << 8) | ((d[29] & 0xFF) << 16));
+            if (canvasWidth <= 0 || canvasHeight <= 0 || canvasWidth > MAX_CHIEU_RONG || canvasHeight > MAX_CHIEU_CAO) {
+                return false;
+            }
+            int viTri = 30;
+            boolean coChunkAnh = false;
+            while (viTri + 8 <= d.length) {
+                long chunkLen = docUnsigned32LittleEndian(d, viTri + 4);
+                if (viTri + 8 + chunkLen > d.length) {
+                    return false;
+                }
+                if (khop(d, viTri, "VP8 ") || khop(d, viTri, "VP8L") || khop(d, viTri, "ANMF")) {
+                    coChunkAnh = true;
+                }
+                viTri += 8 + (int) chunkLen + ((chunkLen % 2 != 0) ? 1 : 0);
+            }
+            return coChunkAnh;
         }
         return false;
     }
@@ -202,4 +295,3 @@ public final class KiemTraAnh {
                 | (long) (d[viTri] & 0xFF);
     }
 }
-

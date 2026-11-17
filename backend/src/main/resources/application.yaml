@@ -37,6 +37,7 @@ spring:
     multipart:
       max-file-size: 15MB
       max-request-size: 15MB
+      resolve-lazily: true
 
 server:
   port: ${PORT:8080}
@@ -53,6 +54,8 @@ server:
         max-age: ${SESSION_MAX_AGE_SECONDS:31536000}
 
 app:
+  repository:
+    type: ${APP_REPOSITORY_TYPE:in-memory}
   security:
     allowed-origins: ${FRONTEND_ORIGIN:https://localhost,http://localhost:5173}
     cookie-secure: ${COOKIE_SECURE:true}

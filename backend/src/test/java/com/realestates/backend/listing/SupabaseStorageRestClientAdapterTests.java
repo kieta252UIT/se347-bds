@@ -101,6 +101,31 @@ class SupabaseStorageRestClientAdapterTests {
                 .isInstanceOf(AuthProviderUnavailableException.class);
         assertThatThrownBy(() -> chuaCauHinh.doc("abc.png"))
                 .isInstanceOf(AuthProviderUnavailableException.class);
+        assertThatThrownBy(() -> chuaCauHinh.xoa("abc.png"))
+                .isInstanceOf(AuthProviderUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("Xóa đối tượng gửi đúng đường dẫn và header DELETE")
+    void xoaGuiDungYeuCau() {
+        server.expect(requestTo("http://supabase.test/storage/v1/object/anh-tin/abc.png"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andExpect(header("apikey", "khoa-dich-vu"))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer khoa-dich-vu"))
+                .andRespond(withSuccess());
+
+        adapter.xoa("abc.png");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Storage trả lỗi khi xóa thì báo tạm gián đoạn")
+    void xoaLoiStorageThanhTamGianDoan() {
+        server.expect(requestTo("http://supabase.test/storage/v1/object/anh-tin/abc.png"))
+                .andRespond(withServerError());
+
+        assertThatThrownBy(() -> adapter.xoa("abc.png"))
+                .isInstanceOf(AuthProviderUnavailableException.class);
     }
 }
 

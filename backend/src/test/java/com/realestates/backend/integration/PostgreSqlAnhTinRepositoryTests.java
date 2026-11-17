@@ -2,9 +2,12 @@ package com.realestates.backend.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.realestates.backend.auth.domain.PrincipalPhienHienTai;
+import com.realestates.backend.auth.domain.VaiTroTaiKhoan;
 import com.realestates.backend.database.TestDatabaseSettings;
 import com.realestates.backend.listing.domain.AnhTinTruyCap;
 import com.realestates.backend.listing.domain.DinhDangAnh;
+import com.realestates.backend.listing.domain.QuyenDocAnh;
 import com.realestates.backend.listing.infrastructure.PostgreSqlAnhTinRepository;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,18 +45,22 @@ class PostgreSqlAnhTinRepositoryTests {
         UUID chuId = taoTaiKhoan();
         UUID anhId = UUID.randomUUID();
 
-        kho.luuAnhTam(anhId, chuId, anhId + ".png", DinhDangAnh.PNG, 1234L);
+        kho.luuAnhTam(anhId, chuId, anhId + ".png", anhId + "-display.png", DinhDangAnh.PNG, 1234L);
         Optional<AnhTinTruyCap> anh = kho.timAnhDeDoc(anhId);
 
         assertThat(anh).isPresent();
         assertThat(anh.get().chuAnhId()).isEqualTo(chuId);
         assertThat(anh.get().trangThaiAnh()).isEqualTo("tam");
         assertThat(anh.get().khoaTepGoc()).isEqualTo(anhId + ".png");
-        assertThat(anh.get().khoaAnhHienThi()).isNull();
+        assertThat(anh.get().khoaAnhHienThi()).isEqualTo(anhId + "-display.png");
         assertThat(anh.get().mimeType()).isEqualTo("image/png");
         assertThat(anh.get().phienBanTinId()).isNull();
         assertThat(anh.get().trangThaiTin()).isNull();
         assertThat(anh.get().chuTinHoatDong()).isFalse();
+
+        assertThat(kho.coThamChieuKhoa(anhId + ".png")).isTrue();
+        assertThat(kho.coThamChieuKhoa(anhId + "-display.png")).isTrue();
+        assertThat(kho.coThamChieuKhoa("chua-tung-co.png")).isFalse();
     }
 
     @Test
@@ -107,6 +114,45 @@ class PostgreSqlAnhTinRepositoryTests {
 
         jdbcTemplate.update("UPDATE se214.tai_khoan SET trang_thai = 'bi_khoa' WHERE id = ?", chuId);
         assertThat(kho.timAnhDeDoc(anhId).get().chuTinHoatDong()).isFalse();
+    }
+
+    @Test
+    @Transactional
+    @DisplayName("Cấu hình thật: lưu ảnh tạm, khởi tạo lại repository (restart) thì metadata và quyền đọc vẫn toàn vẹn")
+    void kiemTraMetadataVaQuyenDocTonTaiSauRestart() {
+        PostgreSqlAnhTinRepository kho1 = new PostgreSqlAnhTinRepository(jdbcTemplate);
+        UUID chuId = taoTaiKhoan();
+        UUID anhId = UUID.randomUUID();
+
+        // 1. Upload và lưu vào PostgreSQL
+        kho1.luuAnhTam(anhId, chuId, anhId + ".png", anhId + "-display.png", DinhDangAnh.PNG, 2048L);
+
+        // 2. Giả lập khởi động lại ứng dụng (tạo thể hiện repository mới từ kết nối DB)
+        PostgreSqlAnhTinRepository khoSauRestart = new PostgreSqlAnhTinRepository(jdbcTemplate);
+        Optional<AnhTinTruyCap> anh = khoSauRestart.timAnhDeDoc(anhId);
+
+        assertThat(anh).isPresent();
+        assertThat(anh.get().chuAnhId()).isEqualTo(chuId);
+        assertThat(anh.get().trangThaiAnh()).isEqualTo("tam");
+        assertThat(anh.get().khoaTepGoc()).isEqualTo(anhId + ".png");
+        assertThat(anh.get().khoaAnhHienThi()).isEqualTo(anhId + "-display.png");
+        assertThat(anh.get().mimeType()).isEqualTo("image/png");
+
+        // 3. Kiểm tra phân quyền đọc sau khi restart
+        PrincipalPhienHienTai chuPrincipal = new PrincipalPhienHienTai(
+                UUID.randomUUID(), chuId, "cookie-hash", "chu@test.com", "Chủ", "0900000000",
+                VaiTroTaiKhoan.NGUOI_DUNG, com.realestates.backend.auth.domain.TrangThaiTaiKhoan.HOAT_DONG, true, 0L
+        );
+        PrincipalPhienHienTai nguoiKhacPrincipal = new PrincipalPhienHienTai(
+                UUID.randomUUID(), UUID.randomUUID(), "cookie-hash-2", "khac@test.com", "Khác", "0900000001",
+                VaiTroTaiKhoan.NGUOI_DUNG, com.realestates.backend.auth.domain.TrangThaiTaiKhoan.HOAT_DONG, true, 0L
+        );
+
+        // Chủ sở hữu đọc được ảnh tạm của chính mình
+        assertThat(QuyenDocAnh.duocPhepDoc(anh.get(), chuPrincipal)).isTrue();
+        // Người khác hoặc khách vãng lai không được đọc ảnh tạm
+        assertThat(QuyenDocAnh.duocPhepDoc(anh.get(), nguoiKhacPrincipal)).isFalse();
+        assertThat(QuyenDocAnh.duocPhepDoc(anh.get(), null)).isFalse();
     }
 }
 
