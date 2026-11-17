@@ -98,6 +98,13 @@ public interface SupabaseAuthPort {
     }
 
     /**
+     * Xác minh mã OTP 6 chữ số (0-9) đi kèm email để khôi phục mật khẩu (type = "recovery").
+     */
+    default SupabaseVerifiedIdentity verifyPasswordRecoveryOtp(String email, String otp) {
+        return verifyPasswordRecoveryTokenHash(otp);
+    }
+
+    /**
      * Cập nhật mật khẩu mới và dấu app_metadata.se214_password_reset_operation = operationId
      * qua Supabase Admin API (PUT /auth/v1/admin/users/{user_id}) trong cùng transaction provider
      * (thiet-ke-phien-sprint-1.md §5.1, §5.2 bước 3).

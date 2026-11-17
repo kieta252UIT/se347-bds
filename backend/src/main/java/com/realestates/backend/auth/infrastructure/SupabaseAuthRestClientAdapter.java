@@ -410,11 +410,27 @@ public class SupabaseAuthRestClientAdapter implements SupabaseAuthPort {
     }
 
     @Override
+    public SupabaseVerifiedIdentity verifyPasswordRecoveryOtp(String email, String otp) {
+        if (isBlank(email)) {
+            return verifyPasswordRecoveryTokenHash(otp);
+        }
+        Map<String, Object> verifyBody = new LinkedHashMap<>();
+        verifyBody.put("type", "recovery");
+        verifyBody.put("email", email.trim().toLowerCase(Locale.ROOT));
+        verifyBody.put("token", otp != null ? otp.trim() : "");
+        return executePasswordRecoveryVerify(verifyBody);
+    }
+
+    @Override
     public SupabaseVerifiedIdentity verifyPasswordRecoveryTokenHash(String tokenHash) {
         Map<String, Object> verifyBody = Map.of(
                 "type", "recovery",
                 "token_hash", tokenHash
         );
+        return executePasswordRecoveryVerify(verifyBody);
+    }
+
+    private SupabaseVerifiedIdentity executePasswordRecoveryVerify(Map<String, Object> verifyBody) {
         String baseUrl = properties.getNormalizedBaseUrl();
         String apiKey = !isBlank(properties.getAnonKey())
                 ? properties.getAnonKey().trim()

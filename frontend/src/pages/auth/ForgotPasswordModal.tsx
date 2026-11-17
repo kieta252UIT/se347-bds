@@ -211,12 +211,12 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
               <label
                 style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#334155", marginBottom: "0.4rem" }}
               >
-                Mã OTP (8 chữ số)
+                Mã OTP (6 chữ số)
               </label>
               <input
                 type="text"
                 inputMode="numeric"
-                maxLength={8}
+                maxLength={6}
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                 placeholder="123456"

@@ -57,7 +57,7 @@ public class AuthPasswordResetService {
     public static final int MAX_TOKEN_HASH_LENGTH = 1024;
 
     private static final Set<String> ALLOWED_RESET_REQUEST_FIELDS = Set.of("email");
-    private static final Set<String> ALLOWED_RESET_FIELDS = Set.of("tokenHash", "matKhauMoi", "token", "otp");
+    private static final Set<String> ALLOWED_RESET_FIELDS = Set.of("tokenHash", "matKhauMoi", "token", "otp", "email");
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
             "^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
@@ -232,10 +232,19 @@ public class AuthPasswordResetService {
         // Áp dụng rate limit hoàn tất xác minh (20 lần/5 phút/IP)
         rateLimitPort.checkAndRecordEmailVerifyAttempt(clientIp);
 
+        String rawEmail = extractOptionalStringField(rawPayload, "email");
+
         // 1. Xác minh proof với Supabase Auth (cố định type = "recovery")
         SupabaseVerifiedIdentity verifiedIdentity;
         try {
-            verifiedIdentity = supabaseAuthPort.verifyPasswordRecoveryTokenHash(rawTokenHash.trim());
+            if (rawEmail != null && !rawEmail.isBlank() && rawTokenHash.trim().matches("^[0-9]{6,8}$")) {
+                verifiedIdentity = supabaseAuthPort.verifyPasswordRecoveryOtp(
+                        rawEmail.trim().toLowerCase(Locale.ROOT),
+                        rawTokenHash.trim()
+                );
+            } else {
+                verifiedIdentity = supabaseAuthPort.verifyPasswordRecoveryTokenHash(rawTokenHash.trim());
+            }
         } catch (InvalidVerificationLinkException ex) {
             throw ex;
         } catch (AuthProviderUnavailableException ex) {
@@ -250,11 +259,40 @@ public class AuthPasswordResetService {
 
         // 2. Tra cứu tài khoản nội bộ và kiểm tra gate
         UUID providerUserId = verifiedIdentity.supabaseAuthUserId();
+        String identityEmail = verifiedIdentity.email() != null ? verifiedIdentity.email().trim().toLowerCase(Locale.ROOT) : null;
         TaiKhoan account = taiKhoanRepository.findBySupabaseAuthUserId(providerUserId)
-                .or(() -> (verifiedIdentity.email() != null && !verifiedIdentity.email().isBlank())
-                        ? taiKhoanRepository.findByEmail(verifiedIdentity.email().trim().toLowerCase(Locale.ROOT))
+                .or(() -> (identityEmail != null && !identityEmail.isBlank())
+                        ? taiKhoanRepository.findByEmail(identityEmail)
                         : Optional.empty())
-                .orElseThrow(() -> new InvalidVerificationLinkException("Liên kết recovery không hợp lệ, hết hạn hoặc đã dùng."));
+                .orElseGet(() -> {
+                    // Phục hồi hồ sơ tài khoản nếu chưa có trong DB (vd InMemory sau khởi động lại)
+                    String hoTen = (verifiedIdentity.hoTenMetadata() != null && !verifiedIdentity.hoTenMetadata().isBlank())
+                            ? verifiedIdentity.hoTenMetadata().trim()
+                            : "Người dùng";
+                    TaiKhoan recovered = TaiKhoan.taoNguoiDungDaXacMinh(
+                            UUID.randomUUID(),
+                            providerUserId,
+                            identityEmail != null ? identityEmail : (rawEmail != null ? rawEmail.trim().toLowerCase(Locale.ROOT) : ""),
+                            hoTen,
+                            verifiedIdentity.soDienThoaiMetadata(),
+                            clock.instant()
+                    );
+                    return taiKhoanRepository.save(recovered);
+                });
+
+        if (!account.isEmailDaXacMinh()) {
+            account = account.danhDauEmailDaXacMinh(clock.instant());
+            account = taiKhoanRepository.save(account);
+        }
+
+        if (!"san_sang".equals(account.getTrangThaiDongBoAuth())) {
+            Instant staleThreshold = clock.instant().minusSeconds(30);
+            if (account.getCapNhatAuthLuc() != null && account.getCapNhatAuthLuc().isBefore(staleThreshold)) {
+                // Thao tác dở trước đó đã quá 30s -> CAS mở lại gate về san_sang theo quy trình vận hành §5.4
+                taiKhoanRepository.updateDongBoAuthCas(account.getId(), account.getMaThaoTacAuth(), "san_sang", null, clock.instant());
+                account = taiKhoanRepository.findById(account.getId()).orElse(account);
+            }
+        }
 
         if (!"san_sang".equals(account.getTrangThaiDongBoAuth())) {
             // Đang có thao tác reset hoặc khôi phục khác chưa hoàn tất -> 409 DAT_LAI_DANG_XU_LY
