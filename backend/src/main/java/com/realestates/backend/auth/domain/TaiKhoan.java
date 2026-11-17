@@ -4,9 +4,6 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * Thực thể miền Tài khoản (bảng tai_khoan) theo đặc tả database-design-sprint-1.md §3.1.
- */
 public final class TaiKhoan {
     private final UUID id;
     private final UUID supabaseAuthUserId;
@@ -18,6 +15,7 @@ public final class TaiKhoan {
     private final boolean emailDaXacMinh;
     private final long mocThuHoi;
     private final String trangThaiDongBoAuth;
+    private final UUID maThaoTacAuth;
     private final Instant capNhatAuthLuc;
     private final Instant taoLuc;
     private final Instant capNhatLuc;
@@ -33,6 +31,7 @@ public final class TaiKhoan {
             boolean emailDaXacMinh,
             long mocThuHoi,
             String trangThaiDongBoAuth,
+            UUID maThaoTacAuth,
             Instant capNhatAuthLuc,
             Instant taoLuc,
             Instant capNhatLuc
@@ -47,15 +46,19 @@ public final class TaiKhoan {
         this.emailDaXacMinh = emailDaXacMinh;
         this.mocThuHoi = mocThuHoi;
         this.trangThaiDongBoAuth = Objects.requireNonNull(trangThaiDongBoAuth, "trangThaiDongBoAuth không được null");
+        this.maThaoTacAuth = maThaoTacAuth;
         this.capNhatAuthLuc = Objects.requireNonNull(capNhatAuthLuc, "capNhatAuthLuc không được null");
         this.taoLuc = Objects.requireNonNull(taoLuc, "taoLuc không được null");
         this.capNhatLuc = Objects.requireNonNull(capNhatLuc, "capNhatLuc không được null");
+
+        if ("san_sang".equals(trangThaiDongBoAuth) && maThaoTacAuth != null) {
+            throw new IllegalArgumentException("ck_tai_khoan_ma_auth: maThaoTacAuth phải null khi trangThaiDongBoAuth là san_sang");
+        }
+        if (!"san_sang".equals(trangThaiDongBoAuth) && maThaoTacAuth == null) {
+            throw new IllegalArgumentException("ck_tai_khoan_ma_auth: maThaoTacAuth không được null khi trangThaiDongBoAuth là " + trangThaiDongBoAuth);
+        }
     }
 
-    /**
-     * Tạo tài khoản mới qua luồng đăng ký công khai (UC-25 / FR-15 / AC-15.1).
-     * Cố định vai trò là NGUOI_DUNG, trạng thái HOAT_DONG và emailDaXacMinh = false.
-     */
     public static TaiKhoan taoNguoiDungMoi(
             UUID id,
             UUID supabaseAuthUserId,
@@ -76,16 +79,13 @@ public final class TaiKhoan {
                 false,
                 0L,
                 "san_sang",
+                null,
                 timestamp,
                 timestamp,
                 timestamp
         );
     }
 
-    /**
-     * Tạo tài khoản vai trò Người dùng đã được xác minh email trên Supabase Auth
-     * (dùng khi hoàn tất hồ sơ còn thiếu từ danh tính provider tin cậy theo api-specification §8.4).
-     */
     public static TaiKhoan taoNguoiDungDaXacMinh(
             UUID id,
             UUID supabaseAuthUserId,
@@ -106,16 +106,13 @@ public final class TaiKhoan {
                 true,
                 0L,
                 "san_sang",
+                null,
                 timestamp,
                 timestamp,
                 timestamp
         );
     }
 
-    /**
-     * Khôi phục thực thể TaiKhoan từ kho lưu trữ PostgreSQL (bao gồm cả các tài khoản nội bộ
-     * kiem_duyet_vien, quan_tri_vien, hoặc tài khoản đang bị khóa / đang đồng bộ).
-     */
     public static TaiKhoan khoiPhucTuLuuTru(
             UUID id,
             UUID supabaseAuthUserId,
@@ -127,6 +124,7 @@ public final class TaiKhoan {
             boolean emailDaXacMinh,
             long mocThuHoi,
             String trangThaiDongBoAuth,
+            UUID maThaoTacAuth,
             Instant capNhatAuthLuc,
             Instant taoLuc,
             Instant capNhatLuc
@@ -151,16 +149,46 @@ public final class TaiKhoan {
                 emailDaXacMinh,
                 mocThuHoi,
                 trangThaiDongBoAuth,
+                maThaoTacAuth,
                 capNhatAuthLuc != null ? capNhatAuthLuc : fallbackNow,
                 taoLuc != null ? taoLuc : fallbackNow,
                 capNhatLuc != null ? capNhatLuc : fallbackNow
         );
     }
 
-    /**
-     * Trả về bản sao thực thể TaiKhoan với trạng thái email_da_xac_minh = true (UC-26 / AC-15.2).
-     * Giữ nguyên vai trò, trạng thái khóa, mốc thu hồi và các thông tin hồ sơ.
-     */
+    public static TaiKhoan khoiPhucTuLuuTru(
+            UUID id,
+            UUID supabaseAuthUserId,
+            String normalizedEmail,
+            String normalizedHoTen,
+            String normalizedSoDienThoai,
+            VaiTroTaiKhoan vaiTro,
+            TrangThaiTaiKhoan trangThai,
+            boolean emailDaXacMinh,
+            long mocThuHoi,
+            String trangThaiDongBoAuth,
+            Instant capNhatAuthLuc,
+            Instant taoLuc,
+            Instant capNhatLuc
+    ) {
+        return khoiPhucTuLuuTru(
+                id,
+                supabaseAuthUserId,
+                normalizedEmail,
+                normalizedHoTen,
+                normalizedSoDienThoai,
+                vaiTro,
+                trangThai,
+                emailDaXacMinh,
+                mocThuHoi,
+                trangThaiDongBoAuth,
+                null,
+                capNhatAuthLuc,
+                taoLuc,
+                capNhatLuc
+        );
+    }
+
     public TaiKhoan danhDauEmailDaXacMinh(Instant now) {
         Instant timestamp = now != null ? now : Instant.now();
         if (this.emailDaXacMinh) {
@@ -177,15 +205,13 @@ public final class TaiKhoan {
                 true,
                 this.mocThuHoi,
                 this.trangThaiDongBoAuth,
+                this.maThaoTacAuth,
                 timestamp,
                 this.taoLuc,
                 timestamp
         );
     }
 
-    /**
-     * Trả về bản sao thực thể TaiKhoan với trạng thái hoạt động/khóa mới.
-     */
     public TaiKhoan capNhatTrangThai(TrangThaiTaiKhoan trangThaiMoi, Instant now) {
         Instant timestamp = now != null ? now : Instant.now();
         return new TaiKhoan(
@@ -199,18 +225,25 @@ public final class TaiKhoan {
                 this.emailDaXacMinh,
                 this.mocThuHoi,
                 this.trangThaiDongBoAuth,
+                this.maThaoTacAuth,
                 this.capNhatAuthLuc,
                 this.taoLuc,
                 timestamp
         );
     }
 
-    /**
-     * Trả về bản sao thực thể TaiKhoan với moc_thu_hoi tăng thêm 1 và trạng thái đồng bộ Auth cập nhật.
-     */
     public TaiKhoan tangMocThuHoi(String trangThaiDongBoAuthMoi, Instant now) {
+        String nextSyncState = trangThaiDongBoAuthMoi != null ? trangThaiDongBoAuthMoi : this.trangThaiDongBoAuth;
+        UUID nextMaThaoTac = "san_sang".equals(nextSyncState)
+                ? null
+                : (this.maThaoTacAuth != null ? this.maThaoTacAuth : UUID.randomUUID());
+        return tangMocThuHoi(nextSyncState, nextMaThaoTac, now);
+    }
+
+    public TaiKhoan tangMocThuHoi(String trangThaiDongBoAuthMoi, UUID maThaoTacAuth, Instant now) {
         Instant timestamp = now != null ? now : Instant.now();
         String nextSyncState = trangThaiDongBoAuthMoi != null ? trangThaiDongBoAuthMoi : this.trangThaiDongBoAuth;
+        UUID nextMaThaoTac = "san_sang".equals(nextSyncState) ? null : maThaoTacAuth;
         return new TaiKhoan(
                 this.id,
                 this.supabaseAuthUserId,
@@ -222,20 +255,73 @@ public final class TaiKhoan {
                 this.emailDaXacMinh,
                 this.mocThuHoi + 1L,
                 nextSyncState,
+                nextMaThaoTac,
                 timestamp,
                 this.taoLuc,
                 timestamp
         );
     }
 
-    /**
-     * Trả về bản sao thực thể TaiKhoan với trạng thái đồng bộ Auth mới ('san_sang', 'dang_dat_lai', 'can_khoi_phuc').
-     */
     public TaiKhoan capNhatTrangThaiDongBoAuth(String trangThaiDongBoAuthMoi, Instant now) {
+        UUID opId = "san_sang".equals(trangThaiDongBoAuthMoi)
+                ? null
+                : (this.maThaoTacAuth != null ? this.maThaoTacAuth : UUID.randomUUID());
+        return capNhatTrangThaiDongBoAuth(trangThaiDongBoAuthMoi, opId, now);
+    }
+
+    public TaiKhoan capNhatTrangThaiDongBoAuth(String trangThaiDongBoAuthMoi, UUID maThaoTacAuth, Instant now) {
         if (!"san_sang".equals(trangThaiDongBoAuthMoi)
                 && !"dang_dat_lai".equals(trangThaiDongBoAuthMoi)
                 && !"can_khoi_phuc".equals(trangThaiDongBoAuthMoi)) {
             throw new IllegalArgumentException("trangThaiDongBoAuth không hợp lệ: " + trangThaiDongBoAuthMoi);
+        }
+        Instant timestamp = now != null ? now : Instant.now();
+        UUID nextMaThaoTac = "san_sang".equals(trangThaiDongBoAuthMoi) ? null : maThaoTacAuth;
+        return new TaiKhoan(
+                this.id,
+                this.supabaseAuthUserId,
+                this.email,
+                this.hoTen,
+                this.soDienThoai,
+                this.vaiTro,
+                this.trangThai,
+                this.emailDaXacMinh,
+                this.mocThuHoi,
+                trangThaiDongBoAuthMoi,
+                nextMaThaoTac,
+                timestamp,
+                this.taoLuc,
+                timestamp
+        );
+    }
+
+    public TaiKhoan batDauDatLaiMatKhau(UUID maThaoTacAuth, Instant now) {
+        if (!"san_sang".equals(this.trangThaiDongBoAuth)) {
+            throw new IllegalStateException("Không thể bắt đầu đặt lại mật khẩu khi trạng thái đồng bộ là " + this.trangThaiDongBoAuth);
+        }
+        Objects.requireNonNull(maThaoTacAuth, "maThaoTacAuth không được null khi bắt đầu đặt lại mật khẩu");
+        Instant timestamp = now != null ? now : Instant.now();
+        return new TaiKhoan(
+                this.id,
+                this.supabaseAuthUserId,
+                this.email,
+                this.hoTen,
+                this.soDienThoai,
+                this.vaiTro,
+                this.trangThai,
+                this.emailDaXacMinh,
+                this.mocThuHoi + 1L,
+                "dang_dat_lai",
+                maThaoTacAuth,
+                timestamp,
+                this.taoLuc,
+                timestamp
+        );
+    }
+
+    public TaiKhoan hoanTatDatLaiMatKhau(UUID expectedMaThaoTacAuth, Instant now) {
+        if (!Objects.equals(this.maThaoTacAuth, expectedMaThaoTacAuth)) {
+            throw new IllegalStateException("Mã thao tác Auth không khớp.");
         }
         Instant timestamp = now != null ? now : Instant.now();
         return new TaiKhoan(
@@ -248,7 +334,54 @@ public final class TaiKhoan {
                 this.trangThai,
                 this.emailDaXacMinh,
                 this.mocThuHoi,
-                trangThaiDongBoAuthMoi,
+                "san_sang",
+                null,
+                timestamp,
+                this.taoLuc,
+                timestamp
+        );
+    }
+
+    public TaiKhoan danhDauCanKhoiPhuc(UUID expectedMaThaoTacAuth, Instant now) {
+        if (!Objects.equals(this.maThaoTacAuth, expectedMaThaoTacAuth)) {
+            throw new IllegalStateException("Mã thao tác Auth không khớp.");
+        }
+        Instant timestamp = now != null ? now : Instant.now();
+        return new TaiKhoan(
+                this.id,
+                this.supabaseAuthUserId,
+                this.email,
+                this.hoTen,
+                this.soDienThoai,
+                this.vaiTro,
+                this.trangThai,
+                this.emailDaXacMinh,
+                this.mocThuHoi,
+                "can_khoi_phuc",
+                this.maThaoTacAuth,
+                timestamp,
+                this.taoLuc,
+                timestamp
+        );
+    }
+
+    public TaiKhoan dongThaoTacThatBai(UUID expectedMaThaoTacAuth, Instant now) {
+        if (!Objects.equals(this.maThaoTacAuth, expectedMaThaoTacAuth)) {
+            throw new IllegalStateException("Mã thao tác Auth không khớp.");
+        }
+        Instant timestamp = now != null ? now : Instant.now();
+        return new TaiKhoan(
+                this.id,
+                this.supabaseAuthUserId,
+                this.email,
+                this.hoTen,
+                this.soDienThoai,
+                this.vaiTro,
+                this.trangThai,
+                this.emailDaXacMinh,
+                this.mocThuHoi,
+                "san_sang",
+                null,
                 timestamp,
                 this.taoLuc,
                 timestamp
@@ -293,6 +426,10 @@ public final class TaiKhoan {
 
     public String getTrangThaiDongBoAuth() {
         return trangThaiDongBoAuth;
+    }
+
+    public UUID getMaThaoTacAuth() {
+        return maThaoTacAuth;
     }
 
     public Instant getCapNhatAuthLuc() {

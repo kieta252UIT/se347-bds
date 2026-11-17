@@ -13,11 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
-/**
- * Kho lưu trữ Phiên xác thực (se214.phien_xac_thuc) an toàn đa luồng,
- * đảm bảo toàn vẹn các ràng buộc duy nhất uq_phien_ma_cookie_bam và uq_phien_supabase_session_id,
- * cũng như giao dịch nguyên tử khi thay thế phiên trên cùng trình duyệt (PHIEN-02, PHIEN-04).
- */
 @Repository
 @ConditionalOnProperty(name = "app.repository.type", havingValue = "in-memory", matchIfMissing = true)
 public class InMemoryPhienXacThucRepository implements PhienXacThucRepository {
@@ -107,7 +102,6 @@ public class InMemoryPhienXacThucRepository implements PhienXacThucRepository {
             }
         }
 
-        // Kiểm tra ràng buộc duy nhất cho newPhien trước khi áp thay đổi nguyên tử
         validateUniqueConstraintsForReplacement(newPhien, previousOldSession, revokedOldSession);
 
         if (revokedOldSession != null) {
@@ -149,6 +143,23 @@ public class InMemoryPhienXacThucRepository implements PhienXacThucRepository {
     }
 
     @Override
+    public synchronized int revokeAllByTaiKhoanId(UUID taiKhoanId, String lyDoThuHoi, Instant now) {
+        if (taiKhoanId == null) {
+            return 0;
+        }
+        Instant timestamp = now != null ? now : Instant.now();
+        int count = 0;
+        for (PhienXacThuc session : new ArrayList<>(sessionsById.values())) {
+            if (taiKhoanId.equals(session.getTaiKhoanId()) && !session.isDaThuHoi()) {
+                PhienXacThuc revoked = session.thuHoi(lyDoThuHoi, timestamp, false);
+                putInternal(revoked);
+                count++;
+            }
+        }
+        return count;
+    }
+
+    @Override
     public synchronized Optional<PhienXacThuc> tryAcquireRefreshLease(
             UUID phienId,
             UUID leaseId,
@@ -164,9 +175,7 @@ public class InMemoryPhienXacThucRepository implements PhienXacThucRepository {
             return Optional.empty();
         }
 
-        // Kiểm tra xem có lease nào đang hoạt động chưa hết hạn hay không
         if (session.getRefreshLeaseDenLuc() != null && session.getRefreshLeaseDenLuc().isAfter(currentTime)) {
-            // Đang có worker khác giữ lease hợp lệ
             return Optional.empty();
         }
 
@@ -194,7 +203,6 @@ public class InMemoryPhienXacThucRepository implements PhienXacThucRepository {
             return false;
         }
 
-        // CAS check: leaseId và phienBanCapNhat phải khớp chính xác
         if (!expectedLeaseId.equals(session.getRefreshLeaseId())) {
             return false;
         }
@@ -259,8 +267,6 @@ public class InMemoryPhienXacThucRepository implements PhienXacThucRepository {
         if (supabaseSid != null) {
             UUID existingBySupabaseSid = sessionIdBySupabaseSessionId.get(supabaseSid);
             if (existingBySupabaseSid != null && !existingBySupabaseSid.equals(newPhien.getId())) {
-                // Nếu phiên cũ trên cùng trình duyệt vừa giải phóng supabase_session_id thì cho phép,
-                // ngược lại nếu vẫn đang giữ thì chặn trùng
                 boolean releasedByOld = previousOldSession != null
                         && existingBySupabaseSid.equals(previousOldSession.getId())
                         && revokedOldSession != null

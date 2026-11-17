@@ -21,10 +21,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-/**
- * Kho lưu trữ Tài khoản bền vững trên PostgreSQL (bảng se214.tai_khoan)
- * theo đặc tả database-design-sprint-1.md §3.1, ADR-0010, ADR-0016.
- */
 @Repository
 @ConditionalOnProperty(name = "app.repository.type", havingValue = "postgres")
 public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
@@ -84,8 +80,8 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                 INSERT INTO se214.tai_khoan (
                     id, supabase_auth_user_id, email, ho_ten, so_dien_thoai,
                     vai_tro, trang_thai, email_da_xac_minh, moc_thu_hoi,
-                    trang_thai_dong_bo_auth, cap_nhat_auth_luc, tao_luc, cap_nhat_luc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    trang_thai_dong_bo_auth, ma_thao_tac_auth, cap_nhat_auth_luc, tao_luc, cap_nhat_luc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     email = EXCLUDED.email,
                     ho_ten = EXCLUDED.ho_ten,
@@ -95,6 +91,7 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                     email_da_xac_minh = EXCLUDED.email_da_xac_minh,
                     moc_thu_hoi = EXCLUDED.moc_thu_hoi,
                     trang_thai_dong_bo_auth = EXCLUDED.trang_thai_dong_bo_auth,
+                    ma_thao_tac_auth = EXCLUDED.ma_thao_tac_auth,
                     cap_nhat_auth_luc = EXCLUDED.cap_nhat_auth_luc,
                     cap_nhat_luc = EXCLUDED.cap_nhat_luc
                 """;
@@ -111,6 +108,7 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                     taiKhoan.isEmailDaXacMinh(),
                     taiKhoan.getMocThuHoi(),
                     taiKhoan.getTrangThaiDongBoAuth(),
+                    taiKhoan.getMaThaoTacAuth(),
                     Timestamp.from(taiKhoan.getCapNhatAuthLuc()),
                     Timestamp.from(taiKhoan.getTaoLuc()),
                     Timestamp.from(taiKhoan.getCapNhatLuc())
@@ -143,6 +141,7 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
         boolean emailDaXacMinh = rs.getBoolean("email_da_xac_minh");
         long mocThuHoi = rs.getLong("moc_thu_hoi");
         String syncState = rs.getString("trang_thai_dong_bo_auth");
+        UUID maThaoTacAuth = rs.getObject("ma_thao_tac_auth", UUID.class);
         Instant capNhatAuthLuc = rs.getTimestamp("cap_nhat_auth_luc").toInstant();
         Instant taoLuc = rs.getTimestamp("tao_luc").toInstant();
         Instant capNhatLuc = rs.getTimestamp("cap_nhat_luc").toInstant();
@@ -158,10 +157,75 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                 emailDaXacMinh,
                 mocThuHoi,
                 syncState,
+                maThaoTacAuth,
                 capNhatAuthLuc,
                 taoLuc,
                 capNhatLuc
         );
+    }
+
+    @Override
+    public boolean updateDongBoAuthCas(
+            UUID taiKhoanId,
+            UUID expectedMaThaoTacAuth,
+            String newTrangThaiDongBoAuth,
+            UUID newMaThaoTacAuth,
+            Instant now
+    ) {
+        if (taiKhoanId == null) {
+            return false;
+        }
+        Instant timestamp = now != null ? now : Instant.now();
+        String sql;
+        int rows;
+        if (expectedMaThaoTacAuth == null) {
+            sql = """
+                    UPDATE se214.tai_khoan
+                    SET trang_thai_dong_bo_auth = ?,
+                        ma_thao_tac_auth = ?,
+                        cap_nhat_auth_luc = ?,
+                        cap_nhat_luc = ?
+                    WHERE id = ? AND ma_thao_tac_auth IS NULL
+                    """;
+            rows = jdbcTemplate.update(
+                    sql,
+                    newTrangThaiDongBoAuth,
+                    newMaThaoTacAuth,
+                    Timestamp.from(timestamp),
+                    Timestamp.from(timestamp),
+                    taiKhoanId
+            );
+        } else {
+            sql = """
+                    UPDATE se214.tai_khoan
+                    SET trang_thai_dong_bo_auth = ?,
+                        ma_thao_tac_auth = ?,
+                        cap_nhat_auth_luc = ?,
+                        cap_nhat_luc = ?
+                    WHERE id = ? AND ma_thao_tac_auth = ?
+                    """;
+            rows = jdbcTemplate.update(
+                    sql,
+                    newTrangThaiDongBoAuth,
+                    newMaThaoTacAuth,
+                    Timestamp.from(timestamp),
+                    Timestamp.from(timestamp),
+                    taiKhoanId,
+                    expectedMaThaoTacAuth
+            );
+        }
+        return rows > 0;
+    }
+
+    @Override
+    public java.util.List<TaiKhoan> findPendingAuthSyncAccounts(Instant olderThan) {
+        String sql = """
+                SELECT * FROM se214.tai_khoan
+                WHERE trang_thai_dong_bo_auth IN ('dang_dat_lai', 'can_khoi_phuc')
+                  AND cap_nhat_auth_luc <= ?
+                ORDER BY cap_nhat_auth_luc ASC
+                """;
+        return jdbcTemplate.query(sql, ACCOUNT_ROW_MAPPER, Timestamp.from(olderThan != null ? olderThan : Instant.now()));
     }
 
     private static VaiTroTaiKhoan chuyenVaiTro(String vaiTroStr) {
