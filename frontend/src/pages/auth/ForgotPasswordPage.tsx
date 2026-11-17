@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams, useLocation } from "react-router";
 import { authService } from "@/services/authService";
 import { setCsrfToken } from "@/services/api";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { toast } from "@/stores/useToastStore";
 import {
   BrandHomeIcon,
   ShieldCheckIcon,
@@ -14,8 +15,13 @@ import {
 import "./auth.css";
 
 function resolveResetErrorMessage(err: unknown, fallback: string): string {
-  const errObj = err as { code?: string; maLoi?: string; message?: string; thongDiep?: string };
+  const errObj = err as { code?: string; maLoi?: string; message?: string; thongDiep?: string; status?: number };
   const code = errObj?.code || errObj?.maLoi;
+  if (code === "TAM_GIAN_DOAN" || errObj?.status === 503) {
+    return (
+      "Không thể xác minh mã OTP lúc này do kết nối tới máy chủ xác thực bị chậm. Vui lòng kiểm tra lại mã OTP hoặc thử lại sau ít giây."
+    );
+  }
   if (code === "DAT_LAI_DANG_XU_LY") {
     return (
       errObj?.thongDiep ||
@@ -129,6 +135,10 @@ export function ForgotPasswordPage() {
       useAuthStore.getState().clearAuth();
       setCsrfToken(null);
       setStep("done");
+      toast.success(
+        result.thongDiep || "Đặt lại mật khẩu thành công! Hãy đăng nhập lại bằng mật khẩu mới của bạn.",
+        "Đổi mật khẩu thành công"
+      );
       setMessage({
         type: "success",
         text:
@@ -264,36 +274,61 @@ export function ForgotPasswordPage() {
                       fontWeight: 700,
                       textAlign: "center",
                       fontSize: "1.2rem",
+                      borderColor: otp.length === 6 ? "#16a34a" : undefined,
+                      backgroundColor: otp.length === 6 ? "#f0fdf4" : undefined,
+                      transition: "all 0.2s ease",
                     }}
                     required
                   />
+                  {otp.length < 6 ? (
+                    <p style={{ margin: "6px 0 0", fontSize: "0.82rem", color: "#64748b" }}>
+                      ℹ️ Vui lòng nhập đủ 6 chữ số OTP để tiếp tục đặt mật khẩu mới.
+                    </p>
+                  ) : (
+                    <p style={{ margin: "6px 0 0", fontSize: "0.82rem", color: "#16a34a", fontWeight: 600 }}>
+                      ✓ Đã nhập đủ 6 chữ số. Hãy nhập mật khẩu mới bên dưới.
+                    </p>
+                  )}
                 </div>
               )}
 
-              <div className="field-group" style={{ marginTop: tokenHashFromUrl ? 0 : "1rem" }}>
-                <label htmlFor="newPassword">Mật khẩu mới *</label>
-                <div className="icon-field">
-                  <LockIcon />
-                  <input
-                    id="newPassword"
-                    type={showPassword ? "text" : "password"}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Tối thiểu 8 ký tự, có chữ hoa và số"
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="right-icon-btn"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-                  >
-                    {showPassword ? <EyeIcon /> : <EyeOffIcon />}
-                  </button>
+              {/* Ô nhập mật khẩu mới: Hiện ra khi có token từ link hoặc khi người dùng đã gõ đủ 6 số OTP */}
+              {(tokenHashFromUrl || otp.length === 6) && (
+                <div className="field-group" style={{ marginTop: tokenHashFromUrl ? 0 : "1.25rem" }}>
+                  <label htmlFor="newPassword">Mật khẩu mới *</label>
+                  <div className="icon-field">
+                    <LockIcon />
+                    <input
+                      id="newPassword"
+                      type={showPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Tối thiểu 8 ký tự, có chữ hoa và số"
+                      autoFocus={!tokenHashFromUrl}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="right-icon-btn"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                    >
+                      {showPassword ? <EyeIcon /> : <EyeOffIcon />}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <button type="submit" className="submit-button" disabled={loading} style={{ marginTop: "1.25rem" }}>
+              <button
+                type="submit"
+                className="submit-button"
+                disabled={loading || (!tokenHashFromUrl && otp.length < 6) || !isValidNewPassword}
+                style={{
+                  marginTop: "1.25rem",
+                  opacity: loading || (!tokenHashFromUrl && otp.length < 6) || !isValidNewPassword ? 0.6 : 1,
+                  cursor: loading || (!tokenHashFromUrl && otp.length < 6) || !isValidNewPassword ? "not-allowed" : "pointer",
+                }}
+              >
                 {loading ? "Đang xử lý..." : "Xác nhận và đặt lại mật khẩu"}
               </button>
 

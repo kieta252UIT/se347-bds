@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router";
 import { authApi } from "@/lib/auth";
 import { useAuthStore } from "@/stores/useAuthStore";
+import { toast } from "@/stores/useToastStore";
 import ForgotPasswordModal from "./ForgotPasswordModal";
 import {
   AlertIcon,
@@ -74,6 +75,8 @@ export function LoginPage({ onSwitchToRegister, onLogin }: LoginProps) {
       const result = await authApi.login(trimmedEmail, password);
       if (result?.taiKhoan) {
         setAuth(result.taiKhoan);
+        const displayName = result.taiKhoan.hoTen || result.taiKhoan.email || "bạn";
+        toast.success(`Chào mừng ${displayName} đã quay trở lại hệ thống!`, "Đăng nhập thành công");
       }
       handleLoginSuccess();
     } catch (err: unknown) {

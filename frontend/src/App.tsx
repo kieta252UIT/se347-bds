@@ -3,6 +3,7 @@ import { RouterProvider } from "react-router";
 import { router } from "@/routes";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { ensureCsrfToken } from "@/services/api";
+import { ToastContainer } from "@/components/common/ToastContainer";
 
 export default function App() {
   const checkSession = useAuthStore((state) => state.checkSession);
@@ -13,5 +14,10 @@ export default function App() {
     checkSession();
   }, [checkSession]);
 
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <RouterProvider router={router} />
+      <ToastContainer />
+    </>
+  );
 }

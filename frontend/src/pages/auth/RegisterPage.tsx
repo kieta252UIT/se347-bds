@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import { authApi } from "@/lib/auth";
+import { toast } from "@/stores/useToastStore";
 import {
   LockIcon,
   EyeIcon,
@@ -90,11 +91,16 @@ export function RegisterPage({ onSwitchToLogin }: RegistrationProps) {
       setMessage(null);
 
       // Đăng ký qua backend proxy (POST /api/auth/register). Backend gán vai trò người dùng (nguoi_dung).
-      await authApi.register(
+      const regResult = await authApi.register(
         formData.fullName,
         formData.mainEmail,
         password,
         formData.mainPhone || undefined
+      );
+
+      toast.success(
+        regResult.result?.thongDiep || "Đăng ký tài khoản thành công! Vui lòng kiểm tra hộp thư email để lấy mã OTP xác minh.",
+        "Đăng ký thành công"
       );
 
       // Tự động chuyển hướng ngay sang màn hình xác minh email kèm địa chỉ email vừa đăng ký
