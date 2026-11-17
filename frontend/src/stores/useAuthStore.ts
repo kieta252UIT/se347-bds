@@ -2,9 +2,18 @@ import { create } from "zustand";
 import type { AuthState, UserProfile, UserRole } from "@/types/auth";
 import api from "@/services/api";
 
+export interface AuthNotice {
+  text: string;
+  unverifiedEmail?: string;
+}
+
 interface AuthStore extends AuthState {
+  authNotice: AuthNotice | null;
   setAuth: (user: UserProfile) => void;
   clearAuth: () => void;
+  setAuthNotice: (notice: AuthNotice | null) => void;
+  clearAuthNotice: () => void;
+  handleSessionInvalidated: (reasonMessage: string, unverifiedEmail?: string) => void;
   setLoading: (loading: boolean) => void;
   checkSession: () => Promise<void>;
   logout: () => Promise<void>;
@@ -15,6 +24,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   role: "KHACH",
   isAuthenticated: false,
   isLoading: true,
+  authNotice: null,
 
   setAuth: (user: UserProfile) => {
     set({
@@ -22,6 +32,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       role: user.vaiTro,
       isAuthenticated: true,
       isLoading: false,
+      authNotice: null,
     });
   },
 
@@ -34,6 +45,27 @@ export const useAuthStore = create<AuthStore>((set) => ({
     });
   },
 
+  setAuthNotice: (authNotice: AuthNotice | null) => {
+    set({ authNotice });
+  },
+
+  clearAuthNotice: () => {
+    set({ authNotice: null });
+  },
+
+  handleSessionInvalidated: (reasonMessage: string, unverifiedEmail?: string) => {
+    set({
+      user: null,
+      role: "KHACH",
+      isAuthenticated: false,
+      isLoading: false,
+      authNotice: {
+        text: reasonMessage,
+        unverifiedEmail,
+      },
+    });
+  },
+
   setLoading: (isLoading: boolean) => {
     set({ isLoading });
   },
@@ -41,9 +73,21 @@ export const useAuthStore = create<AuthStore>((set) => ({
   checkSession: async () => {
     try {
       set({ isLoading: true });
-      // Thử lấy thông tin người dùng từ cookie phiên hiện tại
-      const response = await api.get<UserProfile>("/auth/me");
+      // Thử lấy thông tin người dùng từ cookie phiên hiện tại (GET /api/me theo openapi-sprint-1.yaml)
+      const response = await api.get<UserProfile>("/me");
       if (response.data) {
+        if (response.data.trangThai === "bi_khoa") {
+          set({
+            user: null,
+            role: "KHACH",
+            isAuthenticated: false,
+            isLoading: false,
+            authNotice: {
+              text: "Tài khoản của bạn đã bị khóa bởi Quản trị viên.",
+            },
+          });
+          return;
+        }
         set({
           user: response.data,
           role: response.data.vaiTro || "NGUOI_DUNG",
@@ -52,7 +96,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         });
       }
     } catch {
-      // Khi chưa đăng nhập hoặc phiên hết hạn/không có cookie
+      // Khi chưa đăng nhập hoặc phiên hết hạn/bị thu hồi/bị khóa
       set({
         user: null,
         role: "KHACH" as UserRole,

@@ -56,14 +56,15 @@ export interface ResendVerificationPayload {
   email: string;
 }
 
-// Payload DTOs quên mật khẩu (OTP email)
+// Payload DTOs quên mật khẩu (hỗ trợ cả OTP 6 chữ số lẫn tokenHash từ liên kết recovery)
 export interface QuenMatKhauPayload {
   email: string;
 }
 
 export interface DatLaiMatKhauPayload {
-  email: string;
-  otp: string;
+  email?: string;
+  otp?: string;
+  tokenHash?: string;
   matKhauMoi: string;
 }
 
@@ -74,13 +75,25 @@ export interface GuiEmailKetQua {
 }
 
 export interface XacMinhKetQua {
-  thanhCong: boolean;
+  trangThai?: string;
+  thanhCong?: boolean;
   thongDiep: string;
   csrfToken?: string;
   canDangNhapLai?: boolean;
 }
 
+export interface DatLaiKetQua {
+  trangThai: string;
+  thongDiep: string;
+  canDangNhapLai?: boolean;
+}
+
 export interface DangNhapKetQua {
   taiKhoan: UserProfile;
+  csrfToken?: string;
+}
+
+export interface DangXuatKetQua {
+  trangThai: string;
   csrfToken?: string;
 }

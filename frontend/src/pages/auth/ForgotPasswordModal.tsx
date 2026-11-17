@@ -1,8 +1,50 @@
 import React, { useState } from "react";
 import { authService } from "@/services/authService";
+import { setCsrfToken } from "@/services/api";
+import { useAuthStore } from "@/stores/useAuthStore";
+import { toast } from "@/stores/useToastStore";
 import { LockIcon, EyeIcon, EyeOffIcon } from "@/components/auth/AuthIcons";
 
-type Step = "email" | "otp";
+type Step = "email" | "otp" | "done";
+
+function resolvePasswordResetErrorMessage(err: unknown, fallback: string): string {
+  const errObj = err as { code?: string; maLoi?: string; message?: string; thongDiep?: string; status?: number };
+  const code = errObj?.code || errObj?.maLoi;
+  if (code === "TAM_GIAN_DOAN" || errObj?.status === 503) {
+    return (
+      "Không thể xác minh mã OTP lúc này do kết nối tới máy chủ xác thực bị chậm. Vui lòng kiểm tra lại mã OTP hoặc thử lại sau ít giây."
+    );
+  }
+  if (code === "DAT_LAI_DANG_XU_LY") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Thao tác đặt lại mật khẩu của tài khoản đang được xử lý. Vui lòng đợi trong giây lát."
+    );
+  }
+  if (code === "KET_QUA_DAT_LAI_CHUA_XAC_DINH") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Chưa xác định được toàn bộ kết quả đặt lại do gián đoạn kết nối. Không tự gửi lại liên tục; hãy thử lại sau khi hệ thống tự động đối chiếu (khoảng 30 giây)."
+    );
+  }
+  if (code === "MAT_KHAU_KHONG_DAT_CHINH_SACH") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Mật khẩu mới không đạt chính sách bảo mật (tối thiểu 8 ký tự, tối đa 72 bytes UTF-8)."
+    );
+  }
+  if (code === "LIEN_KET_KHONG_HOP_LE") {
+    return (
+      errObj?.thongDiep ||
+      errObj?.message ||
+      "Mã OTP khôi phục không hợp lệ, đã hết hạn hoặc đã được sử dụng."
+    );
+  }
+  return errObj?.thongDiep || errObj?.message || fallback;
+}
 
 interface ForgotPasswordModalProps {
   onClose: () => void;
@@ -50,8 +92,9 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
   // Bước 2: Xác nhận OTP + đặt lại mật khẩu
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp.trim()) {
-      setMessage({ type: "error", text: "Vui lòng nhập mã OTP đã được gửi về email." });
+    const trimmedOtp = otp.trim();
+    if (!/^\d{6}$/.test(trimmedOtp)) {
+      setMessage({ type: "error", text: "Vui lòng nhập mã OTP hợp lệ gồm đúng 6 chữ số (0-9)." });
       return;
     }
     if (!isValidNewPassword) {
@@ -61,20 +104,32 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
     try {
       setLoading(true);
       setMessage(null);
-      await authService.resetPassword({
+      const result = await authService.resetPassword({
         email: email.trim().toLowerCase(),
-        otp: otp.trim(),
+        otp: trimmedOtp,
         matKhauMoi: newPassword,
       });
+      // Khi đặt lại mật khẩu thành công, toàn bộ phiên cũ trên DB đã bị thu hồi (moc_thu_hoi + 1)
+      useAuthStore.getState().clearAuth();
+      setCsrfToken(null);
+      setStep("done");
+      toast.success(
+        result.thongDiep || "Mật khẩu đã được đặt lại thành công! Bạn có thể đăng nhập bằng mật khẩu mới.",
+        "Đổi mật khẩu thành công"
+      );
       setMessage({
         type: "success",
-        text: "Mật khẩu đã được đặt lại thành công! Bạn có thể đăng nhập bằng mật khẩu mới.",
+        text:
+          result.thongDiep ||
+          "Mật khẩu đã được đặt lại thành công và các phiên cũ đã thu hồi! Bạn có thể đăng nhập bằng mật khẩu mới.",
       });
     } catch (err: unknown) {
-      const errObj = err as { message?: string; thongDiep?: string };
       setMessage({
         type: "error",
-        text: errObj?.message || errObj?.thongDiep || "Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng thử lại.",
+        text: resolvePasswordResetErrorMessage(
+          err,
+          "Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng thử lại."
+        ),
       });
     } finally {
       setLoading(false);
@@ -204,6 +259,29 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
           </form>
         )}
 
+        {/* Bước 3: Hoàn tất đặt lại mật khẩu */}
+        {step === "done" && (
+          <div style={{ textAlign: "center", marginTop: "0.75rem" }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                width: "100%",
+                padding: "0.75rem",
+                backgroundColor: "#0f3d32",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "0.5rem",
+                fontWeight: 600,
+                fontSize: "0.95rem",
+                cursor: "pointer",
+              }}
+            >
+              Đăng nhập bằng mật khẩu mới →
+            </button>
+          </div>
+        )}
+
         {/* Bước 2: Nhập OTP + mật khẩu mới */}
         {step === "otp" && (
           <form onSubmit={handleResetPassword}>
@@ -211,81 +289,78 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
               <label
                 style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#334155", marginBottom: "0.4rem" }}
               >
-                Mã OTP (8 chữ số)
+                Mã OTP (6 chữ số)
               </label>
               <input
                 type="text"
                 inputMode="numeric"
-                maxLength={8}
+                maxLength={6}
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="123456"
                 required
                 autoFocus
-                style={{ ...inputStyle, letterSpacing: "0.3em", fontWeight: 700, textAlign: "center", fontSize: "1.1rem" }}
+                style={{
+                  ...inputStyle,
+                  letterSpacing: "0.3em",
+                  fontWeight: 700,
+                  textAlign: "center",
+                  fontSize: "1.1rem",
+                  borderColor: otp.length === 6 ? "#16a34a" : "#cbd5e1",
+                  backgroundColor: otp.length === 6 ? "#f0fdf4" : "#ffffff",
+                  transition: "all 0.2s ease",
+                }}
               />
+              {otp.length < 6 ? (
+                <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "#64748b" }}>
+                  ℹ️ Vui lòng nhập đủ 6 chữ số OTP để tiếp tục đặt mật khẩu mới.
+                </p>
+              ) : (
+                <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "#16a34a", fontWeight: 600 }}>
+                  ✓ Đã nhập đủ 6 chữ số. Hãy nhập mật khẩu mới bên dưới.
+                </p>
+              )}
             </div>
 
-            <div style={{ marginBottom: "0.75rem" }}>
-              <label
-                style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#334155", marginBottom: "0.4rem" }}
-              >
-                Mật khẩu mới
-              </label>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "0.5rem",
-                  paddingLeft: "0.75rem",
-                  gap: "6px",
-                }}
-              >
-                <LockIcon />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Tối thiểu 8 ký tự, có chữ hoa và số"
-                  required
-                  style={{
-                    border: "none",
-                    outline: "none",
-                    padding: "0.65rem 0.5rem",
-                    flex: 1,
-                    fontSize: "0.9rem",
-                    background: "transparent",
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-                  style={{
-                    border: "none",
-                    background: "none",
-                    cursor: "pointer",
-                    color: "#64748b",
-                    padding: "0.5rem",
-                    display: "flex",
-                    alignItems: "center",
-                  }}
+            {/* Ô nhập mật khẩu mới: Tự động trượt hiện ra khi người dùng gõ đủ 6 chữ số OTP */}
+            {otp.length === 6 && (
+              <div style={{ marginBottom: "0.75rem", animation: "fadeIn 0.25s ease-in" }}>
+                <label
+                  style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#334155", marginBottom: "0.4rem" }}
                 >
-                  {showPassword ? <EyeIcon /> : <EyeOffIcon />}
-                </button>
+                  Mật khẩu mới
+                </label>
+                <div className="icon-field">
+                  <LockIcon />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Tối thiểu 8 ký tự, có chữ hoa và số"
+                    autoFocus
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="right-icon-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                  >
+                    {showPassword ? <EyeIcon /> : <EyeOffIcon />}
+                  </button>
+                </div>
+                {/* Điều kiện mật khẩu mini */}
+                <div style={{ display: "flex", gap: "10px", marginTop: "6px", fontSize: "12px", color: "#64748b" }}>
+                  <span style={{ color: newPassword.length >= 8 ? "#16a34a" : "#94a3b8" }}>✓ 8+ ký tự</span>
+                  <span style={{ color: /[A-Z]/.test(newPassword) ? "#16a34a" : "#94a3b8" }}>✓ Chữ hoa</span>
+                  <span style={{ color: /[0-9]/.test(newPassword) ? "#16a34a" : "#94a3b8" }}>✓ Số</span>
+                </div>
               </div>
-              {/* Điều kiện mật khẩu mini */}
-              <div style={{ display: "flex", gap: "10px", marginTop: "6px", fontSize: "12px", color: "#64748b" }}>
-                <span style={{ color: newPassword.length >= 8 ? "#16a34a" : "#94a3b8" }}>✓ 8+ ký tự</span>
-                <span style={{ color: /[A-Z]/.test(newPassword) ? "#16a34a" : "#94a3b8" }}>✓ Chữ hoa</span>
-                <span style={{ color: /[0-9]/.test(newPassword) ? "#16a34a" : "#94a3b8" }}>✓ Số</span>
-              </div>
-            </div>
+            )}
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || otp.length < 6 || !isValidNewPassword}
               style={{
                 width: "100%",
                 padding: "0.75rem",
@@ -295,9 +370,10 @@ export default function ForgotPasswordModal({ onClose, onSwitchToRegister }: For
                 borderRadius: "0.5rem",
                 fontWeight: 600,
                 fontSize: "0.95rem",
-                cursor: loading ? "not-allowed" : "pointer",
-                opacity: loading ? 0.7 : 1,
+                cursor: loading || otp.length < 6 || !isValidNewPassword ? "not-allowed" : "pointer",
+                opacity: loading || otp.length < 6 || !isValidNewPassword ? 0.6 : 1,
                 marginTop: "0.75rem",
+                transition: "opacity 0.2s ease",
               }}
             >
               {loading ? "Đang xử lý..." : "Đặt lại mật khẩu"}
