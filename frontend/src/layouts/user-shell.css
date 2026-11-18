@@ -1,0 +1,303 @@
+/* ==========================================================
+   KHUNG GIAO DIỆN NGƯỜI DÙNG HOMEFINDER (Header, Footer, Dialog)
+   ========================================================== */
+
+.hf-page-shell {
+  --green: #14775d;
+  --deep: #102f27;
+  --ink: #12271f;
+  --muted: #647a71;
+  --cream: #f7faf8;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  background: #fbfcfb;
+  color: var(--ink);
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
+.hf-main-stage {
+  flex: 1;
+  width: 100%;
+}
+
+/* Header cố định trên cùng */
+.hf-header {
+  position: sticky;
+  z-index: 25;
+  top: 0;
+  display: flex;
+  height: 72px;
+  align-items: center;
+  gap: 42px;
+  border-bottom: 1px solid #edf1ef;
+  background: rgb(255 255 255 / 94%);
+  padding: 0 clamp(20px, 3vw, 52px);
+  backdrop-filter: blur(10px);
+  box-sizing: border-box;
+}
+
+.hf-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #183126;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hf-brand span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--green);
+  color: #ffffff;
+}
+
+.hf-brand svg {
+  width: 19px;
+  height: 19px;
+}
+
+.hf-nav {
+  display: flex;
+  align-self: stretch;
+  align-items: center;
+  gap: 30px;
+}
+
+.hf-nav a {
+  display: grid;
+  height: 100%;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  color: #718078;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.hf-nav a.active,
+.hf-nav a:hover {
+  border-bottom-color: var(--green);
+  color: var(--green);
+}
+
+.hf-header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hf-signed-in-label {
+  color: #517064;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hf-login-btn {
+  display: inline-flex;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(20 119 93 / 35%);
+  border-radius: 9px;
+  background: #ffffff;
+  padding: 0 17px;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+  font-family: inherit;
+}
+
+.hf-login-btn:hover {
+  background: #eff8f4;
+  border-color: var(--green);
+}
+
+/* Modal Dialog đăng/sửa tin */
+.hf-post-dialog-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(9 39 30 / 58%);
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.hf-post-dialog {
+  position: relative;
+  width: min(100%, 1080px);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  border-radius: 20px;
+  background: #f6f7fb;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 28%);
+  display: flex;
+  flex-direction: column;
+}
+
+.hf-post-dialog-scroll {
+  min-height: 0;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.hf-close-dialog {
+  position: absolute;
+  z-index: 5;
+  top: 18px;
+  right: 20px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #eaf0f2;
+  color: #40554e;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.hf-close-dialog:hover {
+  background: #dce8e3;
+}
+
+/* Footer chung */
+.hf-footer {
+  display: grid;
+  grid-template-columns: 1.5fr repeat(3, 1fr);
+  gap: 40px;
+  background: #102f27;
+  padding: 58px max(24px, calc((100vw - 966px) / 2)) 21px;
+  color: #ffffff;
+  box-sizing: border-box;
+}
+
+.hf-footer-brand .hf-brand {
+  color: #ffffff;
+}
+
+.hf-footer-brand .hf-brand span {
+  background: #187961;
+}
+
+.hf-footer p {
+  max-width: 242px;
+  margin: 15px 0;
+  color: #a4bbb2;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.hf-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.hf-footer strong {
+  margin: 7px 0 4px;
+  font-size: 14px;
+}
+
+.hf-footer a {
+  color: #a7bcb4;
+  font-size: 13px;
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.hf-footer a:hover {
+  color: #ffffff;
+}
+
+.hf-footer small {
+  grid-column: 1 / -1;
+  margin-top: 17px;
+  border-top: 1px solid rgb(174 205 194 / 15%);
+  padding-top: 21px;
+  color: #8fac9f;
+  font-size: 12px;
+}
+
+@media (max-width: 800px) {
+  .hf-header {
+    gap: 20px;
+  }
+
+  .hf-nav {
+    gap: 17px;
+  }
+
+  .hf-footer {
+    grid-template-columns: 1.5fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .hf-header {
+    height: 64px;
+    gap: 14px;
+    padding: 0 16px;
+  }
+
+  .hf-brand {
+    font-size: 17px;
+    gap: 8px;
+  }
+
+  .hf-brand span {
+    width: 32px;
+    height: 32px;
+  }
+
+  .hf-nav {
+    gap: 12px;
+    overflow-x: auto;
+  }
+
+  .hf-nav a {
+    font-size: 12px;
+  }
+
+  .hf-login-btn {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .hf-signed-in-label {
+    display: none;
+  }
+
+  .hf-footer {
+    grid-template-columns: 1fr 1fr;
+    padding: 44px 24px 21px;
+  }
+
+  .hf-footer-brand {
+    grid-column: 1 / -1;
+  }
+}

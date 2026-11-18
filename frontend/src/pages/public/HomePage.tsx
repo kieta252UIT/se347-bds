@@ -1,324 +1,558 @@
-import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router";
-import api from "@/services/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
+import { useAuth } from "@/hooks/useAuth";
+import locations from "@/data/locations.json";
+import "./home-page.css";
+
+type IconName =
+  | "home"
+  | "user"
+  | "search"
+  | "chevron"
+  | "heart"
+  | "pin"
+  | "area"
+  | "bed"
+  | "arrow"
+  | "plus";
+
+function Icon({ name }: { name: IconName }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    home: (
+      <>
+        <path d="m3 11 9-7 9 7" />
+        <path d="M5 10v10h14V10M9 20v-6h6v6" />
+      </>
+    ),
+    user: (
+      <>
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5.5 20a6.5 6.5 0 0 1 13 0" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="10.8" cy="10.8" r="5.7" />
+        <path d="m15.2 15.2 4 4" />
+      </>
+    ),
+    chevron: <path d="m7 10 5 5 5-5" />,
+    heart: (
+      <path d="M20.8 8.5c0 5.5-8.8 10.4-8.8 10.4S3.2 14 3.2 8.5A4.3 4.3 0 0 1 11 6l1 1.2L13 6a4.3 4.3 0 0 1 7.8 2.5Z" />
+    ),
+    pin: (
+      <>
+        <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" />
+        <circle cx="12" cy="10" r="2.5" />
+      </>
+    ),
+    area: <path d="M5 9V5h4M15 5h4v4M19 15v4h-4M9 19H5v-4" />,
+    bed: (
+      <>
+        <path d="M3 17v-6h18v6M5 17v2M19 17v2M3 14h18" />
+        <path d="M5 11V8h5a3 3 0 0 1 3 3" />
+      </>
+    ),
+    arrow: <path d="M5 12h14m-5-5 5 5-5 5" />,
+    plus: <path d="M12 5v14M5 12h14" />,
+  };
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name]}
+    </svg>
+  );
+}
+
+const categories = [
+  ["01", "Căn hộ chung cư", "1.286 tin"],
+  ["02", "Nhà phố", "946 tin"],
+  ["03", "Nhà riêng", "728 tin"],
+  ["04", "Đất nền", "634 tin"],
+  ["05", "Biệt thự", "218 tin"],
+  ["06", "Mặt bằng kinh doanh", "452 tin"],
+  ["07", "Phòng trọ", "1.234 tin"],
+];
+
+const properties = [
+  {
+    tag: "Nổi bật",
+    price: "4,2 tỷ",
+    title: "Căn hộ 2 phòng ngủ gần trung tâm TP. Thủ Đức",
+    place: "Thảo Điền, TP. Thủ Đức",
+    size: "78 m²",
+    beds: "2 phòng ngủ",
+    image:
+      "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=900&q=82",
+  },
+  {
+    tag: "Nổi bật",
+    price: "8,9 tỷ",
+    title: "Nhà phố 1 trệt 2 lầu tại Bình Thạnh",
+    place: "Phường 25, Bình Thạnh",
+    size: "92 m²",
+    beds: "3 phòng ngủ",
+    image:
+      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=82",
+  },
+  {
+    tag: "Nổi bật",
+    price: "18 triệu/tháng",
+    title: "Căn hộ cho thuê đầy đủ nội thất",
+    place: "An Phú, TP. Thủ Đức",
+    size: "84 m²",
+    beds: "2 phòng ngủ",
+    image:
+      "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&w=900&q=82",
+  },
+];
+
+const cities = [
+  [
+    "TP. Hồ Chí Minh",
+    "2.450 bất động sản",
+    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=900&q=80",
+  ],
+  [
+    "Hà Nội",
+    "1.820 bất động sản",
+    "https://images.unsplash.com/photo-1689080541115-5acffbf0a083?q=80&w=686&auto=format&fit=crop",
+  ],
+  [
+    "Đà Nẵng",
+    "960 bất động sản",
+    "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=900&q=80",
+  ],
+];
+
+const demandOptions = ["Tất cả", "Mua nhà", "Thuê nhà"];
+const provinceOptions = ["Tất cả", ...locations.provinces.map(({ name }) => name)];
+const propertyTypeOptions = [
+  "Tất cả",
+  "Căn hộ chung cư",
+  "Nhà phố",
+  "Nhà riêng",
+  "Đất nền",
+  "Biệt thự",
+  "Mặt bằng kinh doanh",
+  "Phòng trọ",
+];
+
+const formatPrice = (vnd: number) => {
+  for (const [unit, label] of [
+    [1_000_000_000, "tỷ"],
+    [1_000_000, "triệu"],
+  ] as const) {
+    const scaled = vnd / unit;
+    if (scaled >= 1 && Number.isInteger(scaled * 100)) {
+      return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(scaled)} ${label} VNĐ`;
+    }
+  }
+  return `${vnd.toLocaleString("vi-VN")} VNĐ`;
+};
+
+const formatProvinceLabel = (province: string) =>
+  province.replace(/^Thành phố /, "TP. ").replace(/^Tỉnh /, "");
+
+function normalizeVietnamese(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+}
+
+const normalizeProvinceName = (province: string) =>
+  province
+    .replace(/^(Thành phố|Tỉnh|TP\.)\s*/, "")
+    .trim()
+    .toLocaleLowerCase("vi");
 
 export function HomePage() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const [liked, setLiked] = useState<number[]>([]);
+  const [activeFilter, setActiveFilter] = useState<
+    "demand" | "province" | "propertyType" | "price" | null
+  >(null);
+  const [selectedDemand, setSelectedDemand] = useState("Tất cả");
+  const [selectedProvince, setSelectedProvince] = useState("Tất cả");
+  const [provinceSearchText, setProvinceSearchText] = useState("");
+  const [selectedPropertyType, setSelectedPropertyType] = useState(propertyTypeOptions[0]);
+  const [minPrice, setMinPrice] = useState("0");
+  const [maxPrice, setMaxPrice] = useState("100000000000");
 
-  // State bộ lọc nhanh tại trang chủ
-  const [nhuCau, setNhuCau] = useState("BAN");
-  const [loaiBds, setLoaiBds] = useState("CAN_HO");
-  const [khuVuc, setKhuVuc] = useState("TPHCM");
-  const [mucGia, setMucGia] = useState("ALL");
-  const [backendStatus, setBackendStatus] = useState<string>("Đang kiểm tra kết nối Spring Boot...");
+  const filterCardRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
-    api.get<string>("/hello")
-      .then((res) => setBackendStatus(`Spring Boot API: "${res.data}"`))
-      .catch((err) => setBackendStatus(`Spring Boot API (chưa chạy): ${err.message}`));
-  }, []);
+  const filteredProvinceOptions = useMemo(() => {
+    if (!provinceSearchText.trim()) return provinceOptions;
+    const norm = normalizeVietnamese(provinceSearchText);
+    return provinceOptions.filter((option) =>
+      normalizeVietnamese(option).includes(norm)
+    );
+  }, [provinceSearchText]);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
+  const toggleLiked = (index: number) =>
+    setLiked((current) =>
+      current.includes(index) ? current.filter((item) => item !== index) : [...current, index]
+    );
+
+  const handleSearch = () => {
     const params = new URLSearchParams({
-      nhuCau,
-      loaiBds,
-      khuVuc,
-      mucGia,
+      transaction:
+        selectedDemand === "Tất cả"
+          ? "Tất cả"
+          : selectedDemand === "Thuê nhà"
+          ? "Cho thuê"
+          : "Mua bán",
+      city: selectedProvince,
+      propertyType: selectedPropertyType === "Tất cả" ? "Tất cả" : selectedPropertyType,
+      priceMin: minPrice,
+      priceMax: maxPrice,
     });
     navigate(`/tim-kiem?${params.toString()}`);
   };
 
-  // Dữ liệu mockup mẫu cho tin nổi bật
-  const tinNoiBatList = [
+  useEffect(() => {
+    if (!activeFilter) return;
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!filterCardRef.current?.contains(event.target as Node)) setActiveFilter(null);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, [activeFilter]);
+
+  const filterDefinitions = [
+    { key: "demand", label: "Nhu cầu", value: selectedDemand, options: demandOptions },
     {
-      id: "101",
-      tieuDe: "Căn hộ cao cấp Vinhomes Grand Park 2PN view công viên",
-      gia: "2.8 tỷ",
-      dienTich: "68 m²",
-      diaChi: "Quận 9, TP. Thủ Đức, TP.HCM",
-      hinhAnh: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=600&auto=format&fit=crop&q=80",
-      loaiGiaoDich: "Bán",
+      key: "province",
+      label: "Khu vực",
+      value: formatProvinceLabel(selectedProvince),
+      options: provinceOptions,
     },
     {
-      id: "102",
-      tieuDe: "Nhà phố liền kề Khu đô thị Sala hiện đại, full nội thất",
-      gia: "18.5 tỷ",
-      dienTich: "110 m²",
-      diaChi: "Quận 2, TP. Thủ Đức, TP.HCM",
-      hinhAnh: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&auto=format&fit=crop&q=80",
-      loaiGiaoDich: "Bán",
+      key: "propertyType",
+      label: "Loại bất động sản",
+      value: selectedPropertyType,
+      options: propertyTypeOptions,
     },
     {
-      id: "103",
-      tieuDe: "Cho thuê chung cư Masteri Thảo Điền 1PN view sông thoáng mát",
-      gia: "15 triệu/tháng",
-      dienTich: "52 m²",
-      diaChi: "Thảo Điền, TP. Thủ Đức, TP.HCM",
-      hinhAnh: "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600&auto=format&fit=crop&q=80",
-      loaiGiaoDich: "Cho thuê",
+      key: "price",
+      label: "Khoảng giá",
+      value: `${formatPrice(Number(minPrice) || 0)} - ${formatPrice(Number(maxPrice) || 0)}`,
+      options: [],
     },
-    {
-      id: "104",
-      tieuDe: "Đất nền sổ đỏ thổ cư 100% gần trung tâm hành chính",
-      gia: "3.2 tỷ",
-      dienTich: "100 m²",
-      diaChi: "Thành phố Dĩ An, Bình Dương",
-      hinhAnh: "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=600&auto=format&fit=crop&q=80",
-      loaiGiaoDich: "Bán",
-    },
-  ];
+  ] as const;
 
   return (
     <div>
-      {/* 1. KHUNG CHỌN TIÊU CHÍ BỘ LỌC TÌM KIẾM TẠI TRANG CHỦ */}
-      <section style={{
-        backgroundColor: "#ffffff",
-        padding: "2rem",
-        borderRadius: "0.75rem",
-        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)",
-        border: "1px solid #e5e7eb",
-        marginBottom: "2.5rem"
-      }}>
-        <div style={{ marginBottom: "1.25rem" }}>
-          <h1 style={{ margin: 0, fontSize: "1.65rem", color: "#1e3a8a", fontWeight: "bold" }}>
-            Khám Phá Bất Động Sản Phù Hợp
+      {/* 1. Hero & Thanh tìm kiếm nhanh */}
+      <section className="home-hero" id="top">
+        <div className="home-hero-copy">
+          <p className="home-eyebrow">Tìm đúng nơi, chọn đúng nhà</p>
+          <h1>
+            Không gian sống <em>phù hợp với bạn.</em>
           </h1>
-          <p style={{ margin: "0.35rem 0 0", color: "#4b5563", fontSize: "0.95rem" }}>
-            Chọn tiêu chí tìm kiếm theo nhu cầu của bạn để chuyển sang trang danh sách kết quả.
+          <p className="home-description">
+            Khám phá hàng nghìn bất động sản đã được kiểm duyệt và nhận gợi ý dựa trên nhu cầu thực tế của bạn.
           </p>
         </div>
 
-        <form onSubmit={handleSearch}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-            gap: "1rem",
-            marginBottom: "1.25rem"
-          }}>
-            {/* Tiêu chí: Nhu cầu */}
-            <div>
-              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#374151", marginBottom: "0.35rem" }}>
-                Nhu cầu
-              </label>
-              <select
-                value={nhuCau}
-                onChange={(e) => setNhuCau(e.target.value)}
-                style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db" }}
-              >
-                <option value="BAN">Mua / Bán nhà đất</option>
-                <option value="THUE">Thuê / Cho thuê</option>
-              </select>
-            </div>
+        <div
+          className="home-hero-image"
+          role="img"
+          aria-label="Không gian phòng khách hiện đại"
+        />
 
-            {/* Tiêu chí: Loại BĐS */}
-            <div>
-              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#374151", marginBottom: "0.35rem" }}>
-                Loại bất động sản
-              </label>
-              <select
-                value={loaiBds}
-                onChange={(e) => setLoaiBds(e.target.value)}
-                style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db" }}
+        <section
+          ref={filterCardRef}
+          className="home-filter-card"
+          aria-label="Tìm kiếm bất động sản"
+        >
+          {filterDefinitions.map((filter) => (
+            <div className="home-filter-field" key={filter.key}>
+              <button
+                type="button"
+                className={`home-filter-btn ${activeFilter === filter.key ? "active" : ""}`}
+                onClick={() =>
+                  setActiveFilter(activeFilter === filter.key ? null : filter.key)
+                }
+                aria-expanded={activeFilter === filter.key}
               >
-                <option value="CAN_HO">Căn hộ chung cư</option>
-                <option value="NHA_RIENG">Nhà riêng / Nhà phố</option>
-                <option value="DAT_NEN">Đất nền dự án</option>
-                <option value="BIET_THU">Biệt thự</option>
-                <option value="MAT_BANG">Mặt bằng kinh doanh</option>
-              </select>
-            </div>
+                <small>{filter.label}</small>
+                <strong>{filter.value}</strong>
+                <Icon name="chevron" />
+              </button>
 
-            {/* Tiêu chí: Khu vực */}
-            <div>
-              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#374151", marginBottom: "0.35rem" }}>
-                Khu vực
-              </label>
-              <select
-                value={khuVuc}
-                onChange={(e) => setKhuVuc(e.target.value)}
-                style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db" }}
-              >
-                <option value="TPHCM">TP. Hồ Chí Minh</option>
-                <option value="HA_NOI">Hà Nội</option>
-                <option value="DA_NANG">Đà Nẵng</option>
-                <option value="BINH_DUONG">Bình Dương</option>
-                <option value="DONG_NAI">Đồng Nai</option>
-              </select>
+              {activeFilter === filter.key && (
+                <div className="home-filter-menu" role="group" aria-label={filter.label}>
+                  {filter.key === "price" ? (
+                    <div className="home-price-input-wrap">
+                      <label className="home-price-input-control">
+                        <span>Từ (VNĐ)</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={minPrice}
+                          onChange={(event) => {
+                            const digits = event.target.value.replace(/\D/g, "");
+                            const amount = Math.min(Number(digits) || 0, 100000000000);
+                            setMinPrice(String(Math.min(amount, Number(maxPrice) || 0)));
+                          }}
+                          aria-label="Giá thấp nhất, đơn vị VNĐ"
+                        />
+                      </label>
+                      <label className="home-price-input-control">
+                        <span>Đến (VNĐ)</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={maxPrice}
+                          onChange={(event) => {
+                            const digits = event.target.value.replace(/\D/g, "");
+                            const amount = Math.min(Number(digits) || 0, 100000000000);
+                            setMaxPrice(String(Math.max(amount, Number(minPrice) || 0)));
+                          }}
+                          aria-label="Giá cao nhất, đơn vị VNĐ"
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <>
+                      {filter.key === "province" && (
+                        <div
+                          className="home-filter-search-box"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input
+                            type="text"
+                            placeholder="Tìm tỉnh, thành phố..."
+                            value={provinceSearchText}
+                            onChange={(event) => setProvinceSearchText(event.target.value)}
+                            className="home-filter-search-input"
+                            aria-label="Tìm kiếm tỉnh, thành phố"
+                            autoFocus
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                if (filteredProvinceOptions.length > 0) {
+                                  const match =
+                                    filteredProvinceOptions.find((o) => o !== "Tất cả") ||
+                                    filteredProvinceOptions[0];
+                                  setSelectedProvince(match);
+                                  setProvinceSearchText("");
+                                  setActiveFilter(null);
+                                }
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="home-filter-search-btn"
+                            aria-label="Tìm kiếm"
+                            tabIndex={-1}
+                          >
+                            <Icon name="search" />
+                          </button>
+                        </div>
+                      )}
+                      <div className="home-filter-options">
+                        {(filter.key === "province" ? filteredProvinceOptions : filter.options).map(
+                          (option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              className={`home-filter-option ${
+                                (filter.key === "demand" && option === selectedDemand) ||
+                                (filter.key === "province" && option === selectedProvince) ||
+                                (filter.key === "propertyType" &&
+                                  option === selectedPropertyType)
+                                  ? "active"
+                                  : ""
+                              }`}
+                              onClick={() => {
+                                if (filter.key === "demand") setSelectedDemand(option);
+                                if (filter.key === "province") {
+                                  setSelectedProvince(option);
+                                  setProvinceSearchText("");
+                                }
+                                if (filter.key === "propertyType")
+                                  setSelectedPropertyType(option);
+                                setActiveFilter(null);
+                              }}
+                            >
+                              {option}
+                            </button>
+                          )
+                        )}
+                        {filter.key === "province" && filteredProvinceOptions.length === 0 && (
+                          <div className="home-filter-empty">
+                            Không tìm thấy tỉnh / thành phố phù hợp
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
+          ))}
 
-            {/* Tiêu chí: Khoảng giá */}
-            <div>
-              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#374151", marginBottom: "0.35rem" }}>
-                Khoảng giá
-              </label>
-              <select
-                value={mucGia}
-                onChange={(e) => setMucGia(e.target.value)}
-                style={{ width: "100%", padding: "0.55rem", borderRadius: "0.375rem", border: "1px solid #d1d5db" }}
-              >
-                <option value="ALL">Tất cả mức giá</option>
-                <option value="UNDER_1B">Dưới 1 tỷ</option>
-                <option value="1B_3B">1 - 3 tỷ</option>
-                <option value="3B_5B">3 - 5 tỷ</option>
-                <option value="5B_10B">5 - 10 tỷ</option>
-                <option value="ABOVE_10B">Trên 10 tỷ</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <button
-              type="submit"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.65rem 1.75rem",
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: "0.375rem",
-                fontWeight: 600,
-                fontSize: "0.95rem",
-                cursor: "pointer",
-                boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)"
-              }}
-            >
-              🔍 Tìm kiếm ngay
-            </button>
-          </div>
-        </form>
+          <button
+            className="home-search-button"
+            type="button"
+            onClick={handleSearch}
+          >
+            <Icon name="search" />
+            Tìm kiếm
+          </button>
+        </section>
       </section>
 
-      {/* 2. KHU VỰC HIỂN THỊ CÁC TIN NỔI BẬT */}
-      <section style={{ marginBottom: "2.5rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: "1.35rem", color: "#111827" }}>
-              Bất Động Sản Nổi Bật
-            </h2>
-            <p style={{ margin: "0.2rem 0 0", color: "#6b7280", fontSize: "0.875rem" }}>
-              Các tin bất động sản đã kiểm duyệt và được người mua quan tâm nhiều nhất
-            </p>
-          </div>
-
-          <Link to="/tim-kiem" style={{ color: "#2563eb", textDecoration: "none", fontSize: "0.875rem", fontWeight: 500 }}>
-            Xem tất cả tin →
-          </Link>
-        </div>
-
-        {/* Lưới các tin nổi bật */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-          gap: "1.5rem"
-        }}>
-          {tinNoiBatList.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                backgroundColor: "#ffffff",
-                borderRadius: "0.5rem",
-                border: "1px solid #e5e7eb",
-                overflow: "hidden",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                display: "flex",
-                flexDirection: "column"
-              }}
+      {/* 2. Danh mục loại bất động sản */}
+      <section className="home-section">
+        <p className="home-eyebrow">Khám phá</p>
+        <h2>Bạn đang tìm kiếm điều gì?</h2>
+        <div className="home-category-grid">
+          {categories.map(([number, name, count]) => (
+            <Link
+              to={`/tim-kiem?propertyType=${encodeURIComponent(name)}`}
+              className="home-category"
+              key={name}
             >
-              <div style={{ position: "relative", height: "160px", backgroundColor: "#e5e7eb" }}>
-                <img
-                  src={item.hinhAnh}
-                  alt={item.tieuDe}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-                <span style={{
-                  position: "absolute",
-                  top: "0.5rem",
-                  left: "0.5rem",
-                  backgroundColor: "#dc2626",
-                  color: "#ffffff",
-                  fontSize: "0.75rem",
-                  fontWeight: "bold",
-                  padding: "0.2rem 0.5rem",
-                  borderRadius: "0.25rem"
-                }}>
-                  Nổi bật
-                </span>
-                <span style={{
-                  position: "absolute",
-                  bottom: "0.5rem",
-                  right: "0.5rem",
-                  backgroundColor: "rgba(0,0,0,0.65)",
-                  color: "#ffffff",
-                  fontSize: "0.75rem",
-                  padding: "0.2rem 0.5rem",
-                  borderRadius: "0.25rem"
-                }}>
-                  {item.loaiGiaoDich}
-                </span>
+              <small>{number}</small>
+              <div>
+                <strong>{name}</strong>
+                <span>{count}</span>
               </div>
-
-              <div style={{ padding: "1rem", flex: 1, display: "flex", flexDirection: "column" }}>
-                <h3 style={{
-                  fontSize: "0.95rem",
-                  fontWeight: 600,
-                  color: "#111827",
-                  margin: "0 0 0.5rem",
-                  lineHeight: "1.4"
-                }}>
-                  {item.tieuDe}
-                </h3>
-
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                  <span style={{ color: "#dc2626", fontWeight: "bold", fontSize: "1.05rem" }}>
-                    {item.gia}
-                  </span>
-                  <span style={{ color: "#4b5563", fontSize: "0.85rem" }}>
-                    {item.dienTich}
-                  </span>
-                </div>
-
-                <p style={{ color: "#6b7280", fontSize: "0.8rem", margin: "0 0 1rem" }}>
-                  📍 {item.diaChi}
-                </p>
-
-                <div style={{ marginTop: "auto" }}>
-                  <Link
-                    to={`/tin-dang/${item.id}`}
-                    style={{
-                      display: "block",
-                      textAlign: "center",
-                      padding: "0.45rem",
-                      backgroundColor: "#f3f4f6",
-                      color: "#1d4ed8",
-                      borderRadius: "0.375rem",
-                      textDecoration: "none",
-                      fontSize: "0.85rem",
-                      fontWeight: 500
-                    }}
-                  >
-                    Xem chi tiết tin
-                  </Link>
-                </div>
-              </div>
-            </div>
+              <Icon name="arrow" />
+            </Link>
           ))}
         </div>
       </section>
 
-      {/* 3. THÔNG BÁO KẾT NỐI API BACKEND (PHỤ TRỢ CHO DEV) */}
-      <div style={{
-        padding: "0.75rem 1rem",
-        backgroundColor: "#f9fafb",
-        border: "1px dashed #d1d5db",
-        borderRadius: "0.375rem",
-        fontSize: "0.8rem",
-        color: "#6b7280"
-      }}>
-        ⚙️ <strong>Hạ tầng API client:</strong> {backendStatus}
-      </div>
+      {/* 3. Bất động sản nổi bật */}
+      <section className="home-section home-featured">
+        <div className="home-section-heading">
+          <div>
+            <p className="home-eyebrow">Được quan tâm</p>
+            <h2>Bất động sản nổi bật</h2>
+          </div>
+          <Link to="/tim-kiem">
+            Xem tất cả <Icon name="arrow" />
+          </Link>
+        </div>
+
+        <div className="home-property-grid">
+          {properties.map((property, index) => (
+            <article className="home-property" key={property.title}>
+              <div
+                className="home-property-image"
+                style={{ backgroundImage: `url("${property.image}")` }}
+              >
+                <span>{property.tag}</span>
+                <button
+                  type="button"
+                  className={liked.includes(index) ? "liked" : ""}
+                  onClick={() => toggleLiked(index)}
+                  aria-label="Yêu thích"
+                >
+                  <Icon name="heart" />
+                </button>
+              </div>
+              <div className="home-property-body">
+                <strong className="home-price">{property.price}</strong>
+                <h3>{property.title}</h3>
+                <p>
+                  <Icon name="pin" />
+                  {property.place}
+                </p>
+                <div className="home-meta">
+                  <span>
+                    <Icon name="area" />
+                    {property.size}
+                  </span>
+                  <span>
+                    <Icon name="bed" />
+                    {property.beds}
+                  </span>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* 4. Các thành phố lớn */}
+      <section className="home-section">
+        <div className="home-section-heading">
+          <div>
+            <p className="home-eyebrow">Khám phá theo khu vực</p>
+            <h2>Bất động sản tại các thành phố lớn</h2>
+          </div>
+        </div>
+        <div className="home-city-grid">
+          {cities.map(([city, count, image]) => {
+            const province = locations.provinces.find(
+              ({ name }) => normalizeProvinceName(name) === normalizeProvinceName(city)
+            );
+            const searchHref = province
+              ? `/tim-kiem?city=${encodeURIComponent(province.name)}`
+              : "/tim-kiem";
+            return (
+              <Link to={searchHref} className="home-city" key={city}>
+                <div style={{ backgroundImage: `url("${image}")` }} />
+                <strong>{city}</strong>
+                <span>{count}</span>
+                <Icon name="arrow" />
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 5. Callout Đăng tin ngay */}
+      <section
+        className="home-callout"
+        aria-label="Thông tin dành cho chủ bất động sản"
+      >
+        <span>
+          <Icon name="home" />
+        </span>
+        <div>
+          <h2>Bạn có bất động sản cần bán hoặc cho thuê?</h2>
+          <p>
+            Đăng tin dễ dàng, tiếp cận người tìm kiếm phù hợp và quản lý tin ngay trên HomeFinder.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="home-post-button"
+          onClick={() => {
+            if (isAuthenticated) {
+              navigate("/dang-tin");
+            } else {
+              navigate("/dang-nhap", { state: { from: { pathname: "/dang-tin" } } });
+            }
+          }}
+        >
+          <Icon name="plus" /> Đăng tin ngay
+        </button>
+      </section>
     </div>
   );
 }
