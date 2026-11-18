@@ -62,13 +62,13 @@ export function Header() {
           </Link>
 
           {isKdv && (
-            <Link to="/kdv/tham-dinh" style={{ color: "#d97706", textDecoration: "none", fontWeight: 500 }}>
-              Kênh KDV
+            <Link to="/kdv/dashboard" style={{ color: "#0f3d32", textDecoration: "none", fontWeight: 600 }}>
+              Cổng Kiểm duyệt viên
             </Link>
           )}
           {isAdmin && (
-            <Link to="/admin/thong-ke" style={{ color: "#dc2626", textDecoration: "none", fontWeight: 500 }}>
-              Quản trị Admin
+            <Link to="/admin/dashboard" style={{ color: "#0f172a", textDecoration: "none", fontWeight: 600 }}>
+              Cổng Quản trị viên
             </Link>
           )}
         </nav>

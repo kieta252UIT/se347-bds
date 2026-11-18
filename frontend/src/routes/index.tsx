@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import { MainLayout } from "@/layouts/MainLayout";
 import { AuthLayout } from "@/layouts/AuthLayout";
 import { AdminLayout } from "@/layouts/AdminLayout";
@@ -15,18 +15,23 @@ import { LoginPage } from "@/pages/auth/LoginPage";
 import { RegisterPage } from "@/pages/auth/RegisterPage";
 import { VerifyEmailPage } from "@/pages/auth/VerifyEmailPage";
 import { ForgotPasswordPage } from "@/pages/auth/ForgotPasswordPage";
+import { StaffLoginPage } from "@/pages/auth/StaffLoginPage";
 
 import { CreatePropertyPage } from "@/pages/user/CreatePropertyPage";
 import { MyPropertiesPage } from "@/pages/user/MyPropertiesPage";
 import { SavedPropertiesPage } from "@/pages/user/SavedPropertiesPage";
 import { WalletPage } from "@/pages/user/WalletPage";
 
+import { KdvDashboardPage } from "@/pages/kdv/KdvDashboardPage";
 import { ModerationQueuePage } from "@/pages/kdv/ModerationQueuePage";
 import { ReportHandlingPage } from "@/pages/kdv/ReportHandlingPage";
 
+import { AdminOverviewPage } from "@/pages/admin/AdminOverviewPage";
 import { AdminDashboardPage } from "@/pages/admin/AdminDashboardPage";
 import { UserManagementPage } from "@/pages/admin/UserManagementPage";
 import { ReconciliationPage } from "@/pages/admin/ReconciliationPage";
+import { ComplaintResolutionPage } from "@/pages/admin/ComplaintResolutionPage";
+import { ActivityMonitoringPage } from "@/pages/admin/ActivityMonitoringPage";
 
 import { NotFoundPage } from "@/pages/error/NotFoundPage";
 import { ForbiddenPage } from "@/pages/error/ForbiddenPage";
@@ -56,10 +61,15 @@ export const router = createBrowserRouter([
 
   // 2. Nhóm Route xác thực (AuthLayout)
   {
-    element: <GuestOnlyRoute><AuthLayout /></GuestOnlyRoute>,
+    element: (
+      <GuestOnlyRoute>
+        <AuthLayout />
+      </GuestOnlyRoute>
+    ),
     children: [
       { path: "dang-nhap", element: <LoginPage /> },
       { path: "dang-ky", element: <RegisterPage /> },
+      { path: "staff/login", element: <StaffLoginPage /> },
     ],
   },
   {
@@ -73,28 +83,34 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // 3. Nhóm Route Kiểm duyệt viên & Quản trị viên (AdminLayout)
+  // 3. Nhóm Route Kiểm duyệt viên & Quản trị viên (AdminLayout - Tách biệt quyền theo MaTranQuyenSprint1)
   {
     element: <ProtectedRoute />,
     children: [
       {
         element: <AdminLayout />,
         children: [
-          // Dành cho KDV & Admin
+          // Chỉ dành riêng cho Kiểm duyệt viên (UC-13, UC-14)
           {
-            element: <RoleGuard allowedRoles={["KDV", "ADMIN"]} />,
+            element: <RoleGuard allowedRoles={["KDV"]} />,
             children: [
+              { path: "kdv", element: <Navigate to="/kdv/dashboard" replace /> },
+              { path: "kdv/dashboard", element: <KdvDashboardPage /> },
               { path: "kdv/tham-dinh", element: <ModerationQueuePage /> },
               { path: "kdv/bao-cao", element: <ReportHandlingPage /> },
             ],
           },
-          // Chỉ dành riêng cho Admin
+          // Chỉ dành riêng cho Quản trị viên (UC-15 -> UC-24)
           {
             element: <RoleGuard allowedRoles={["ADMIN"]} />,
             children: [
+              { path: "admin", element: <Navigate to="/admin/dashboard" replace /> },
+              { path: "admin/dashboard", element: <AdminOverviewPage /> },
               { path: "admin/thong-ke", element: <AdminDashboardPage /> },
               { path: "admin/tai-khoan", element: <UserManagementPage /> },
               { path: "admin/doi-soat", element: <ReconciliationPage /> },
+              { path: "admin/khieu-nai", element: <ComplaintResolutionPage /> },
+              { path: "admin/giam-sat", element: <ActivityMonitoringPage /> },
             ],
           },
         ],
@@ -102,7 +118,7 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // 4. Nhóm Route lỗi & ngoại lệ
-  { path: "/403", element: <ForbiddenPage /> },
+  // 4. Các trang lỗi (403, 404)
+  { path: "403", element: <ForbiddenPage /> },
   { path: "*", element: <NotFoundPage /> },
 ]);

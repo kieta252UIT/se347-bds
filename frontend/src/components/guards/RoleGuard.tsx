@@ -19,7 +19,7 @@ export function RoleGuard({ allowedRoles, children }: RoleGuardProps) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/dang-nhap" replace />;
+    return <Navigate to="/staff/login" replace />;
   }
 
   const hasPermission = allowedRoles.some((r) => {

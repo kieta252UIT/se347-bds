@@ -6,7 +6,7 @@ interface GuestOnlyRouteProps {
 }
 
 export function GuestOnlyRoute({ children }: GuestOnlyRouteProps) {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, role } = useAuthStore();
 
   if (isLoading) {
     return (
@@ -17,6 +17,13 @@ export function GuestOnlyRoute({ children }: GuestOnlyRouteProps) {
   }
 
   if (isAuthenticated) {
+    const r = (role || "").toLowerCase();
+    if (r === "quan_tri_vien" || r === "admin") {
+      return <Navigate to="/admin/dashboard" replace />;
+    }
+    if (r === "kiem_duyet_vien" || r === "kdv") {
+      return <Navigate to="/kdv/dashboard" replace />;
+    }
     return <Navigate to="/" replace />;
   }
 
