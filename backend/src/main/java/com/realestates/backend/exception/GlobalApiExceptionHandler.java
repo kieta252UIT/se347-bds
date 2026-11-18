@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -75,6 +76,14 @@ public class GlobalApiExceptionHandler {
         return buildErrorResponse(
                 HttpStatus.CONTENT_TOO_LARGE,
                 ApiErrorResponse.of("NOI_DUNG_QUA_LON", "Kich thuoc tep hoac du lieu tai len vuot gioi han cho phep.")
+        );
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ApiErrorResponse> handleMultipartException(MultipartException ex) {
+        return buildErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                ApiErrorResponse.of("DU_LIEU_KHONG_HOP_LE", "Du lieu multipart tai len khong hop le hoac thieu boundary.")
         );
     }
 

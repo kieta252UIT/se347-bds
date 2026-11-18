@@ -9,8 +9,13 @@ import com.realestates.backend.auth.infrastructure.SessionTokenCryptoService;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
+import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Use case: Đăng xuất phiên hiện tại và thu hồi bền vững; chặn sử dụng lại phiên cũ
@@ -32,6 +37,7 @@ public class AuthLogoutService {
     private final AuthBrowserSessionLifecyclePort sessionLifecyclePort;
     private final SessionTokenCryptoService sessionTokenCryptoService;
     private final SupabaseAuthPort supabaseAuthPort;
+    private final TransactionOperations transactionOperations;
 
     @Autowired
     public AuthLogoutService(
@@ -44,6 +50,10 @@ public class AuthLogoutService {
         this.sessionLifecyclePort = Objects.requireNonNull(sessionLifecyclePort, "sessionLifecyclePort không được null");
         this.sessionTokenCryptoService = sessionTokenCryptoService;
         this.supabaseAuthPort = supabaseAuthPort;
+        DataSource dataSource = this.phienXacThucRepository.getDataSource();
+        this.transactionOperations = dataSource != null
+                ? new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+                : null;
     }
 
     public AuthLogoutService(
@@ -76,28 +86,14 @@ public class AuthLogoutService {
                 );
             }
 
-            // 1. Thu hồi bền vững phiên tương ứng trong CSDL trước khi dọn dẹp RAM / Supabase.
-            Optional<PhienXacThuc> revokedOpt;
-            try {
-                revokedOpt = phienXacThucRepository.revokeByMaCookieBam(
-                        maCookieBam,
-                        PhienXacThuc.LY_DO_DANG_XUAT,
-                        Instant.now(),
-                        existingOpt.isPresent() && existingOpt.get().getAccessTokenMaHoa() != null
-                );
-            } catch (AuthProviderUnavailableException ex) {
-                throw ex;
-            } catch (RuntimeException ex) {
-                throw new AuthProviderUnavailableException(
-                        "Kho lưu trữ phiên gặp sự cố khi thu hồi phiên đăng xuất.",
-                        ex
-                );
-            }
-
-            // 2. Chỉ ghi nhận vào cache RAM của adapter sau khi DB đã commit thu hồi thành công
-            if (sessionLifecyclePort instanceof DefaultAuthBrowserSessionLifecycleAdapter adapter) {
-                adapter.recordRevokedCookieHash(maCookieBam);
-            }
+            // 1. Thu hồi bền vững phiên tương ứng trong CSDL dưới khóa tài khoản -> phiên trước khi dọn RAM / Supabase.
+            boolean giuCredentialDeThuHoiProvider = existingOpt.isPresent()
+                    && existingOpt.get().getAccessTokenMaHoa() != null;
+            Optional<PhienXacThuc> revokedOpt = thuHoiPhienDuoiKhoa(
+                    maCookieBam,
+                    existingOpt.orElse(null),
+                    giuCredentialDeThuHoiProvider
+            );
 
             // 3. Gọi Supabase Auth thu hồi phiên local (best-effort)
             if (existingOpt.isPresent() && !existingOpt.get().isDaThuHoi()) {
@@ -115,6 +111,67 @@ public class AuthLogoutService {
         // Phát hành token CSRF mới ở ngữ cảnh khách sau khi đăng xuất
         String anonymousCsrfToken = sessionLifecyclePort.issueAnonymousCsrfToken();
         return DangXuatKetQua.thanhCong(anonymousCsrfToken);
+    }
+
+    private Optional<PhienXacThuc> thuHoiPhienDuoiKhoa(
+            String maCookieBam,
+            PhienXacThuc existingSession,
+            boolean giuCredentialDeThuHoiProvider
+    ) {
+        if (existingSession == null) {
+            return thucHienThuHoiTrongTransaction(maCookieBam, giuCredentialDeThuHoiProvider);
+        }
+        ReentrantLock accountLock = CurrentPermissionAndCsrfService.sharedAccountLock(existingSession.getTaiKhoanId());
+        ReentrantLock sessionLock = CurrentPermissionAndCsrfService.sharedSessionLock(existingSession.getId());
+        accountLock.lock();
+        try {
+            sessionLock.lock();
+            try {
+                return thucHienThuHoiTrongTransaction(maCookieBam, giuCredentialDeThuHoiProvider);
+            } finally {
+                sessionLock.unlock();
+            }
+        } finally {
+            accountLock.unlock();
+        }
+    }
+
+    private Optional<PhienXacThuc> thucHoiTrongTransaction(
+            String maCookieBam,
+            boolean giuCredentialDeThuHoiProvider
+    ) {
+        Optional<PhienXacThuc> revokedOpt = phienXacThucRepository.revokeByMaCookieBam(
+                maCookieBam,
+                PhienXacThuc.LY_DO_DANG_XUAT,
+                Instant.now(),
+                giuCredentialDeThuHoiProvider
+        );
+        // 2. Chỉ ghi nhận vào cache RAM của adapter sau khi DB đã lưu thu hồi thành công
+        if (sessionLifecyclePort instanceof DefaultAuthBrowserSessionLifecycleAdapter adapter) {
+            adapter.recordRevokedCookieHash(maCookieBam);
+        }
+        return revokedOpt;
+    }
+
+    private Optional<PhienXacThuc> thucHienThuHoiTrongTransaction(
+            String maCookieBam,
+            boolean giuCredentialDeThuHoiProvider
+    ) {
+        try {
+            if (transactionOperations != null) {
+                return transactionOperations.execute(
+                        status -> thucHoiTrongTransaction(maCookieBam, giuCredentialDeThuHoiProvider)
+                );
+            }
+            return thucHoiTrongTransaction(maCookieBam, giuCredentialDeThuHoiProvider);
+        } catch (AuthProviderUnavailableException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new AuthProviderUnavailableException(
+                    "Kho lưu trữ phiên gặp sự cố khi thu hồi phiên đăng xuất.",
+                    ex
+            );
+        }
     }
 
     private boolean donDepProviderSessionLocal(PhienXacThuc phien) {

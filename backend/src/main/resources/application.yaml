@@ -33,6 +33,11 @@ spring:
   web:
     resources:
       add-mappings: false
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 15MB
+      resolve-lazily: true
 
 server:
   port: ${PORT:8080}
@@ -49,6 +54,12 @@ server:
         max-age: ${SESSION_MAX_AGE_SECONDS:31536000}
 
 app:
+  repository:
+    type: ${APP_REPOSITORY_TYPE:in-memory}
+  images:
+    temp-ttl-minutes: ${IMAGE_TEMP_TTL_MINUTES:1440}
+  map:
+    mode: ${MAP_PROVIDER_MODE:sandbox}
   security:
     allowed-origins: ${FRONTEND_ORIGIN:https://localhost,http://localhost:5173}
     cookie-secure: ${COOKIE_SECURE:true}
@@ -65,3 +76,4 @@ supabase:
   jwt-secret: ${SUPABASE_JWT_SECRET:}
   auth-connect-timeout-ms: ${SUPABASE_AUTH_CONNECT_TIMEOUT_MS:3000}
   auth-read-timeout-ms: ${SUPABASE_AUTH_READ_TIMEOUT_MS:10000}
+  storage-bucket: ${SUPABASE_STORAGE_BUCKET:anh-tin}

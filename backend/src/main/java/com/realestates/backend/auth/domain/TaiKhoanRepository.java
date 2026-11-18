@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import javax.sql.DataSource;
 
 
 public interface TaiKhoanRepository {
@@ -11,6 +12,14 @@ public interface TaiKhoanRepository {
 
     default Optional<TaiKhoan> findById(UUID id) {
         return Optional.empty();
+    }
+
+    default Optional<TaiKhoan> findByIdForUpdate(UUID id) {
+        return findById(id);
+    }
+
+    default DataSource getDataSource() {
+        return null;
     }
 
     Optional<TaiKhoan> findByEmail(String normalizedEmail);

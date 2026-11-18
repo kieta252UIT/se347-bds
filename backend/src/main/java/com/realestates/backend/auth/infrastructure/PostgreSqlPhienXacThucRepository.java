@@ -42,12 +42,35 @@ public class PostgreSqlPhienXacThucRepository implements PhienXacThucRepository 
     }
 
     @Override
+    public Optional<PhienXacThuc> findByIdForUpdate(UUID id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        String sql = "SELECT * FROM se214.phien_xac_thuc WHERE id = ? FOR UPDATE";
+        return queryOptional(sql, id);
+    }
+
+    @Override
     public Optional<PhienXacThuc> findByMaCookieBam(String maCookieBam) {
         if (maCookieBam == null || maCookieBam.isBlank()) {
             return Optional.empty();
         }
         String sql = "SELECT * FROM se214.phien_xac_thuc WHERE ma_cookie_bam = ?";
         return queryOptional(sql, maCookieBam.trim());
+    }
+
+    @Override
+    public Optional<PhienXacThuc> findByMaCookieBamForUpdate(String maCookieBam) {
+        if (maCookieBam == null || maCookieBam.isBlank()) {
+            return Optional.empty();
+        }
+        String sql = "SELECT * FROM se214.phien_xac_thuc WHERE ma_cookie_bam = ? FOR UPDATE";
+        return queryOptional(sql, maCookieBam.trim());
+    }
+
+    @Override
+    public DataSource getDataSource() {
+        return jdbcTemplate.getDataSource();
     }
 
     @Override
@@ -148,7 +171,7 @@ public class PostgreSqlPhienXacThucRepository implements PhienXacThucRepository 
         if (maCookieBam == null || maCookieBam.isBlank()) {
             return Optional.empty();
         }
-        Optional<PhienXacThuc> currentOpt = findByMaCookieBam(maCookieBam);
+        Optional<PhienXacThuc> currentOpt = findByMaCookieBamForUpdate(maCookieBam);
         if (currentOpt.isEmpty()) {
             return Optional.empty();
         }

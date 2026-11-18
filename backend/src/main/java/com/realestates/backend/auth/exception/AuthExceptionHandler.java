@@ -16,6 +16,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 
 /**
  * Bộ xử lý ngoại lệ tập trung cho toàn bộ luồng Auth, phiên xác thực, phân quyền và bảo vệ CSRF
@@ -285,15 +287,57 @@ public class AuthExceptionHandler {
         );
     }
 
-    @ExceptionHandler({HttpMessageNotReadableException.class, HttpMediaTypeNotSupportedException.class})
+    @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<LoiApiResponse> handleMalformedJson(
-            Exception ex,
+            HttpMessageNotReadableException ex,
             HttpServletRequest request
     ) {
         return buildErrorResponse(
                 HttpStatus.BAD_REQUEST,
                 AuthRegistrationService.MA_LOI_DU_LIEU_KHONG_HOP_LE,
                 "Định dạng JSON gửi lên không hợp lệ.",
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<LoiApiResponse> handleMediaTypeNotSupported(
+            HttpMediaTypeNotSupportedException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                AuthRegistrationService.MA_LOI_DU_LIEU_KHONG_HOP_LE,
+                "Kiểu nội dung yêu cầu không được hỗ trợ.",
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<LoiApiResponse> handleMaxUploadSize(
+            MaxUploadSizeExceededException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.CONTENT_TOO_LARGE,
+                "NOI_DUNG_QUA_LON",
+                "Kích thước tệp hoặc dữ liệu tải lên vượt quá giới hạn cho phép.",
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<LoiApiResponse> handleMultipartException(
+            MultipartException ex,
+            HttpServletRequest request
+    ) {
+        return buildErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                AuthRegistrationService.MA_LOI_DU_LIEU_KHONG_HOP_LE,
+                "Dữ liệu multipart tải lên không hợp lệ.",
                 List.of(),
                 request
         );
