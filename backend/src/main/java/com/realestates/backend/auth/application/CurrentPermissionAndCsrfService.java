@@ -36,9 +36,13 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionOperations;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Dịch vụ ứng dụng kiểm quyền hiện tại (GET /api/me, RBAC, Ownership, kiểm lại quyền trong giao dịch)
@@ -60,14 +64,15 @@ public class CurrentPermissionAndCsrfService {
     private final AuthBrowserSessionLifecyclePort sessionLifecyclePort;
     private final Set<String> allowedOrigins;
     private final AuthSessionMaintenanceService sessionMaintenanceService;
+    private final TransactionOperations transactionOperations;
 
     /**
      * Bảng khóa cấp dòng theo thứ tự cố định: tai_khoan -> phien_xac_thuc -> tài nguyên nghiệp vụ
-     * (thiet-ke-phien-sprint-1.md §2.2 Mục 4 & PHIEN-03).
+     * (thiet-ke-phien-sprint-1.md §2.2 Mục 4 & PHIEN-03), dùng chung trong JVM với luồng đăng xuất.
      */
-    private final ConcurrentHashMap<UUID, ReentrantLock> accountRowLocks = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, ReentrantLock> sessionRowLocks = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, ReentrantLock> resourceRowLocks = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<UUID, ReentrantLock> accountRowLocks = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<UUID, ReentrantLock> sessionRowLocks = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<UUID, ReentrantLock> resourceRowLocks = new ConcurrentHashMap<>();
 
     public CurrentPermissionAndCsrfService(
             TaiKhoanRepository taiKhoanRepository,
@@ -89,6 +94,12 @@ public class CurrentPermissionAndCsrfService {
         this.phienXacThucRepository = Objects.requireNonNull(phienXacThucRepository, "phienXacThucRepository không được null");
         this.sessionLifecyclePort = Objects.requireNonNull(sessionLifecyclePort, "sessionLifecyclePort không được null");
         this.sessionMaintenanceService = sessionMaintenanceService;
+        DataSource dataSource = this.phienXacThucRepository.getDataSource() != null
+                ? this.phienXacThucRepository.getDataSource()
+                : this.taiKhoanRepository.getDataSource();
+        this.transactionOperations = dataSource != null
+                ? new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+                : null;
         this.allowedOrigins = (allowedOrigins == null || allowedOrigins.isEmpty())
                 ? Set.of("https://localhost", "http://localhost:5173")
                 : allowedOrigins.stream()
@@ -318,31 +329,36 @@ public class CurrentPermissionAndCsrfService {
                     resourceLock.lock();
                 }
                 try {
-                    // Đọc lại trạng thái mới nhất từ kho lưu trữ chính ngay bên trong khóa giao dịch
-                    PhienXacThuc freshSession = docPhienTuKhoChinhTheoId(
-                                    initialPrincipal.getPhienId(),
-                                    initialPrincipal.getMaCookieBam()
-                            )
-                            .orElseThrow(UnauthenticatedSessionException::new);
+                    return executeInTransactionIfAvailable(() -> {
+                        // Đọc và khóa dòng theo thứ tự cố định: tai_khoan -> phien_xac_thuc
+                        Optional<TaiKhoan> freshAccountOpt =
+                                docTaiKhoanTuKhoChinhForUpdate(initialPrincipal.getTaiKhoanId());
+                        PhienXacThuc freshSession = docPhienTuKhoChinhTheoIdForUpdate(
+                                        initialPrincipal.getPhienId(),
+                                        initialPrincipal.getMaCookieBam()
+                                )
+                                .orElseThrow(UnauthenticatedSessionException::new);
 
-                    if (freshSession.isDaThuHoi()) {
-                        throw new UnauthenticatedSessionException();
-                    }
+                        if (freshSession.isDaThuHoi()) {
+                            throw new UnauthenticatedSessionException();
+                        }
 
-                    TaiKhoan freshAccount = docTaiKhoanTuKhoChinh(freshSession.getTaiKhoanId())
-                            .orElseThrow(UnauthenticatedSessionException::new);
+                        TaiKhoan freshAccount = freshAccountOpt.orElseGet(() ->
+                                docTaiKhoanTuKhoChinhForUpdate(freshSession.getTaiKhoanId())
+                                        .orElseThrow(UnauthenticatedSessionException::new));
 
-                    kiemTraTrangThaiTaiKhoanVaPhien(freshSession, freshAccount);
+                        kiemTraTrangThaiTaiKhoanVaPhien(freshSession, freshAccount);
 
-                    PrincipalPhienHienTai freshPrincipal =
-                            PrincipalPhienHienTai.tuPhienVaTaiKhoan(freshSession, freshAccount);
+                        PrincipalPhienHienTai freshPrincipal =
+                                PrincipalPhienHienTai.tuPhienVaTaiKhoan(freshSession, freshAccount);
 
-                    UUID chuSoHuuId = docChuSoHuuTaiNguyenTrongKhoa != null
-                            ? docChuSoHuuTaiNguyenTrongKhoa.get()
-                            : null;
-                    kiemTraVaiTroVaChuSoHuu(freshPrincipal, thaoTac, chuSoHuuId);
+                        UUID chuSoHuuId = docChuSoHuuTaiNguyenTrongKhoa != null
+                                ? docChuSoHuuTaiNguyenTrongKhoa.get()
+                                : null;
+                        kiemTraVaiTroVaChuSoHuu(freshPrincipal, thaoTac, chuSoHuuId);
 
-                    return hanhDongGhiTrongTransaction.apply(freshPrincipal);
+                        return hanhDongGhiTrongTransaction.apply(freshPrincipal);
+                    });
                 } finally {
                     if (resourceLock != null) {
                         resourceLock.unlock();
@@ -513,6 +529,13 @@ public class CurrentPermissionAndCsrfService {
         return parts.length == 3 && "v1".equals(parts[0]) && !parts[1].isBlank() && !parts[2].isBlank();
     }
 
+    private <T> T executeInTransactionIfAvailable(Supplier<T> action) {
+        if (transactionOperations != null) {
+            return transactionOperations.execute(status -> action.get());
+        }
+        return action.get();
+    }
+
     private Optional<PhienXacThuc> docPhienTuKhoChinh(String maCookieBam) {
         try {
             return phienXacThucRepository.findByMaCookieBam(maCookieBam);
@@ -526,13 +549,13 @@ public class CurrentPermissionAndCsrfService {
         }
     }
 
-    private Optional<PhienXacThuc> docPhienTuKhoChinhTheoId(UUID phienId, String maCookieBamFallback) {
+    private Optional<PhienXacThuc> docPhienTuKhoChinhTheoIdForUpdate(UUID phienId, String maCookieBamFallback) {
         try {
-            Optional<PhienXacThuc> byId = phienXacThucRepository.findById(phienId);
+            Optional<PhienXacThuc> byId = phienXacThucRepository.findByIdForUpdate(phienId);
             if (byId.isPresent()) {
                 return byId;
             }
-            return phienXacThucRepository.findByMaCookieBam(maCookieBamFallback);
+            return phienXacThucRepository.findByMaCookieBamForUpdate(maCookieBamFallback);
         } catch (AuthProviderUnavailableException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -546,6 +569,19 @@ public class CurrentPermissionAndCsrfService {
     private Optional<TaiKhoan> docTaiKhoanTuKhoChinh(UUID taiKhoanId) {
         try {
             return taiKhoanRepository.findById(taiKhoanId);
+        } catch (AuthProviderUnavailableException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new AuthProviderUnavailableException(
+                    "Kho lưu trữ tài khoản đang tạm gián đoạn. Vui lòng thử lại sau.",
+                    ex
+            );
+        }
+    }
+
+    private Optional<TaiKhoan> docTaiKhoanTuKhoChinhForUpdate(UUID taiKhoanId) {
+        try {
+            return taiKhoanRepository.findByIdForUpdate(taiKhoanId);
         } catch (AuthProviderUnavailableException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -595,12 +631,20 @@ public class CurrentPermissionAndCsrfService {
         }
     }
 
-    private ReentrantLock lockForAccount(UUID taiKhoanId) {
+    public static ReentrantLock sharedAccountLock(UUID taiKhoanId) {
         return accountRowLocks.computeIfAbsent(taiKhoanId, ignored -> new ReentrantLock());
     }
 
-    private ReentrantLock lockForSession(UUID phienId) {
+    public static ReentrantLock sharedSessionLock(UUID phienId) {
         return sessionRowLocks.computeIfAbsent(phienId, ignored -> new ReentrantLock());
+    }
+
+    private ReentrantLock lockForAccount(UUID taiKhoanId) {
+        return sharedAccountLock(taiKhoanId);
+    }
+
+    private ReentrantLock lockForSession(UUID phienId) {
+        return sharedSessionLock(phienId);
     }
 
     private ReentrantLock lockForResource(UUID resourceId) {

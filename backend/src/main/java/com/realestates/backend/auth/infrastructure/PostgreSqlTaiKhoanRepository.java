@@ -56,6 +56,20 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
     }
 
     @Override
+    public Optional<TaiKhoan> findByIdForUpdate(UUID id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        String sql = "SELECT * FROM se214.tai_khoan WHERE id = ? FOR UPDATE";
+        return queryOptional(sql, id);
+    }
+
+    @Override
+    public DataSource getDataSource() {
+        return jdbcTemplate.getDataSource();
+    }
+
+    @Override
     public Optional<TaiKhoan> findByEmail(String normalizedEmail) {
         if (normalizedEmail == null || normalizedEmail.isBlank()) {
             return Optional.empty();
@@ -80,8 +94,8 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                 INSERT INTO se214.tai_khoan (
                     id, supabase_auth_user_id, email, ho_ten, so_dien_thoai,
                     vai_tro, trang_thai, email_da_xac_minh, moc_thu_hoi,
-                    trang_thai_dong_bo_auth, ma_thao_tac_auth, cap_nhat_auth_luc, tao_luc, cap_nhat_luc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    trang_thai_dong_bo_auth, ma_thao_tac_auth, cap_nhat_auth_luc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (id) DO UPDATE SET
                     email = EXCLUDED.email,
                     ho_ten = EXCLUDED.ho_ten,
@@ -92,8 +106,7 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                     moc_thu_hoi = EXCLUDED.moc_thu_hoi,
                     trang_thai_dong_bo_auth = EXCLUDED.trang_thai_dong_bo_auth,
                     ma_thao_tac_auth = EXCLUDED.ma_thao_tac_auth,
-                    cap_nhat_auth_luc = EXCLUDED.cap_nhat_auth_luc,
-                    cap_nhat_luc = EXCLUDED.cap_nhat_luc
+                    cap_nhat_auth_luc = EXCLUDED.cap_nhat_auth_luc
                 """;
 
         try {
@@ -109,9 +122,7 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                     taiKhoan.getMocThuHoi(),
                     taiKhoan.getTrangThaiDongBoAuth(),
                     taiKhoan.getMaThaoTacAuth(),
-                    Timestamp.from(taiKhoan.getCapNhatAuthLuc()),
-                    Timestamp.from(taiKhoan.getTaoLuc()),
-                    Timestamp.from(taiKhoan.getCapNhatLuc())
+                    Timestamp.from(taiKhoan.getCapNhatAuthLuc())
             );
             return taiKhoan;
         } catch (DuplicateKeyException ex) {
@@ -143,8 +154,8 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
         String syncState = rs.getString("trang_thai_dong_bo_auth");
         UUID maThaoTacAuth = rs.getObject("ma_thao_tac_auth", UUID.class);
         Instant capNhatAuthLuc = rs.getTimestamp("cap_nhat_auth_luc").toInstant();
-        Instant taoLuc = rs.getTimestamp("tao_luc").toInstant();
-        Instant capNhatLuc = rs.getTimestamp("cap_nhat_luc").toInstant();
+        Instant taoLuc = capNhatAuthLuc;
+        Instant capNhatLuc = capNhatAuthLuc;
 
         return TaiKhoan.khoiPhucTuLuuTru(
                 id,
@@ -183,15 +194,13 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                     UPDATE se214.tai_khoan
                     SET trang_thai_dong_bo_auth = ?,
                         ma_thao_tac_auth = ?,
-                        cap_nhat_auth_luc = ?,
-                        cap_nhat_luc = ?
+                        cap_nhat_auth_luc = ?
                     WHERE id = ? AND ma_thao_tac_auth IS NULL
                     """;
             rows = jdbcTemplate.update(
                     sql,
                     newTrangThaiDongBoAuth,
                     newMaThaoTacAuth,
-                    Timestamp.from(timestamp),
                     Timestamp.from(timestamp),
                     taiKhoanId
             );
@@ -200,15 +209,13 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
                     UPDATE se214.tai_khoan
                     SET trang_thai_dong_bo_auth = ?,
                         ma_thao_tac_auth = ?,
-                        cap_nhat_auth_luc = ?,
-                        cap_nhat_luc = ?
+                        cap_nhat_auth_luc = ?
                     WHERE id = ? AND ma_thao_tac_auth = ?
                     """;
             rows = jdbcTemplate.update(
                     sql,
                     newTrangThaiDongBoAuth,
                     newMaThaoTacAuth,
-                    Timestamp.from(timestamp),
                     Timestamp.from(timestamp),
                     taiKhoanId,
                     expectedMaThaoTacAuth
