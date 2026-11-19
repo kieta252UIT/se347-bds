@@ -137,12 +137,10 @@ const transactionOptions = ["Tất cả", "Mua bán", "Cho thuê"];
 const propertyTypeOptions = [
   "Tất cả",
   "Căn hộ chung cư",
-  "Nhà phố",
   "Nhà riêng",
   "Đất nền",
-  "Biệt thự",
-  "Mặt bằng kinh doanh",
   "Phòng trọ",
+  "Khác",
 ];
 const areaOptions = ["Tất cả", "Dưới 50 m²", "50 – 80 m²", "80 – 120 m²", "Trên 120 m²"];
 const bedroomOptions = ["Tất cả", "1 phòng ngủ", "2 phòng ngủ", "3 phòng ngủ", "4+ phòng ngủ"];

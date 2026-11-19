@@ -74,12 +74,10 @@ function Icon({ name }: { name: IconName }) {
 
 const categories = [
   ["01", "Căn hộ chung cư", "1.286 tin"],
-  ["02", "Nhà phố", "946 tin"],
-  ["03", "Nhà riêng", "728 tin"],
-  ["04", "Đất nền", "634 tin"],
-  ["05", "Biệt thự", "218 tin"],
-  ["06", "Mặt bằng kinh doanh", "452 tin"],
-  ["07", "Phòng trọ", "1.234 tin"],
+  ["02", "Nhà riêng", "1.674 tin"],
+  ["03", "Đất nền", "634 tin"],
+  ["04", "Phòng trọ", "1.234 tin"],
+  ["05", "Khác", "452 tin"],
 ];
 
 const properties = [
@@ -138,12 +136,10 @@ const provinceOptions = ["Tất cả", ...locations.provinces.map(({ name }) => 
 const propertyTypeOptions = [
   "Tất cả",
   "Căn hộ chung cư",
-  "Nhà phố",
   "Nhà riêng",
   "Đất nền",
-  "Biệt thự",
-  "Mặt bằng kinh doanh",
   "Phòng trọ",
+  "Khác",
 ];
 
 const formatPrice = (vnd: number) => {
