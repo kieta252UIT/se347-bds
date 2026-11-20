@@ -130,7 +130,7 @@ public class TinDangService {
         }
 
         // Vòng 4: Gọi Port bản đồ NGOÀI transaction CSDL
-        xacMinhToaDoBanDo(noiDung);
+        xacMinhToaDoBanDo(banDoPort, noiDung);
 
         Instant thoiDiemHienTai = clock.instant();
         LocalDate thangVietNam = HanMucThangHelper.dauThangVietNam(thoiDiemHienTai);
@@ -176,7 +176,7 @@ public class TinDangService {
         }
     }
 
-    private void xacMinhToaDoBanDo(NoiDungTinDauVao noiDung) {
+    static void xacMinhToaDoBanDo(BanDoPort banDoPort, NoiDungTinDauVao noiDung) {
         boolean hopLe;
         try {
             hopLe = banDoPort.xacMinhToaDo(
@@ -224,7 +224,7 @@ public class TinDangService {
         }
     }
 
-    private static TinGhiKetQua xuLyYeuCauGhiDaTonTai(KetQuaYeuCauGhi yeuCau, String duLieuBamMoi) {
+    static TinGhiKetQua xuLyYeuCauGhiDaTonTai(KetQuaYeuCauGhi yeuCau, String duLieuBamMoi) {
         if (!yeuCau.duLieuBam().equals(duLieuBamMoi)) {
             throw new ListingConflictException(
                     ListingConflictException.MA_LOI_MA_Y_DINH_KHAC_NOI_DUNG,
@@ -234,7 +234,7 @@ public class TinDangService {
         return yeuCau.ketQua();
     }
 
-    private static String chuanHoaVaKiemTraMaYDinh(String rawIdempotencyKey) {
+    static String chuanHoaVaKiemTraMaYDinh(String rawIdempotencyKey) {
         if (rawIdempotencyKey == null || rawIdempotencyKey.isBlank()) {
             throw new AuthValidationException(
                     MA_LOI_DU_LIEU_KHONG_HOP_LE,
@@ -261,7 +261,7 @@ public class TinDangService {
         return trimmed;
     }
 
-    private static List<FieldErrorItem> gopLoiDauVao(List<LoiTruongNoiDung> loiNoiDung, LoiTruongNoiDung loiAnh) {
+    static List<FieldErrorItem> gopLoiDauVao(List<LoiTruongNoiDung> loiNoiDung, LoiTruongNoiDung loiAnh) {
         List<FieldErrorItem> items = new ArrayList<>();
         if (loiNoiDung != null) {
             for (LoiTruongNoiDung item : loiNoiDung) {
