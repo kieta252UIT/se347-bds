@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Predicate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
@@ -180,6 +181,52 @@ public class InMemoryAnhTinRepository implements AnhTinRepository {
                     true
             );
             anhTheoId.put(anhId, new BanGhiAnh(daGan, cu.taoLuc(), i + 1));
+        }
+    }
+
+    public synchronized boolean kiemTraAnhChoSuaTin(UUID chuId, Predicate<UUID> phienBanThuocTin, List<UUID> anhIds) {
+        if (chuId == null || anhIds == null || anhIds.isEmpty()) {
+            return false;
+        }
+        for (UUID anhId : anhIds) {
+            BanGhiAnh banGhi = anhTheoId.get(anhId);
+            if (banGhi == null) {
+                return false;
+            }
+            AnhTinTruyCap a = banGhi.truyCap();
+            boolean anhTamHopLe = AnhTinTruyCap.ANH_TAM.equals(a.trangThaiAnh())
+                    && a.khoaAnhHienThi() != null
+                    && !a.khoaAnhHienThi().isBlank();
+            boolean anhCuCuaTinNay = AnhTinTruyCap.ANH_DA_GAN.equals(a.trangThaiAnh())
+                    && a.phienBanTinId() != null
+                    && phienBanThuocTin.test(a.phienBanTinId());
+            if (!chuId.equals(a.chuAnhId()) || (!anhTamHopLe && !anhCuCuaTinNay)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public synchronized void ganAnhChoPhienBanSua(UUID chuId, UUID phienBanMoiId, List<UUID> anhIds) {
+        for (int i = 0; i < anhIds.size(); i++) {
+            UUID anhId = anhIds.get(i);
+            BanGhiAnh cu = anhTheoId.get(anhId);
+            AnhTinTruyCap a = cu.truyCap();
+            UUID idSauKhiGan = AnhTinTruyCap.ANH_TAM.equals(a.trangThaiAnh()) ? anhId : UUID.randomUUID();
+            AnhTinTruyCap daGan = new AnhTinTruyCap(
+                    idSauKhiGan,
+                    chuId,
+                    AnhTinTruyCap.ANH_DA_GAN,
+                    a.khoaTepGoc(),
+                    a.khoaAnhHienThi(),
+                    a.mimeType(),
+                    phienBanMoiId,
+                    AnhTinTruyCap.TIN_CHO_KIEM_DUYET,
+                    phienBanMoiId,
+                    null,
+                    true
+            );
+            anhTheoId.put(idSauKhiGan, new BanGhiAnh(daGan, cu.taoLuc(), i + 1));
         }
     }
 }

@@ -2,6 +2,7 @@ package com.realestates.backend.listing.infrastructure;
 
 import com.realestates.backend.listing.domain.HanMucThangHelper;
 import com.realestates.backend.listing.domain.NoiDungTinDauVao;
+import com.realestates.backend.listing.domain.QuyTacQuanLyTin;
 import com.realestates.backend.listing.domain.TinDangRepository;
 import com.realestates.backend.listing.dto.TinGhiKetQua;
 import java.time.Instant;
@@ -165,6 +166,205 @@ public class InMemoryTinDangRepository implements TinDangRepository {
         return auditTheoId.values().stream()
                 .filter(a -> a.tinId().equals(tinId))
                 .toList();
+    }
+
+    @Override
+    public synchronized Optional<UUID> khoaVaDocChuTin(UUID tinId) {
+        if (tinId == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(tinTheoId.get(tinId)).map(TinLuuTru::chuId);
+    }
+
+    @Override
+    public synchronized TinGhiKetQua suaTinTrongTransaction(DuLieuSuaTin duLieu) {
+        String khoaYeuCau = khoaYeuCau(duLieu.nguoiSuaId(), LOAI_THAO_TAC_SUA_TIN, duLieu.maYDinh());
+        KetQuaYeuCauGhi daLuu = yeuCauGhiTheoKhoa.get(khoaYeuCau);
+        if (daLuu != null) {
+            return phatLaiKetQuaDaGhi(daLuu, duLieu.duLieuBam());
+        }
+
+        TinLuuTru tin = docTinHoacBaoLoi(duLieu.tinId());
+        kiemTraDieuKienGhi(
+                QuyTacQuanLyTin.dungPhienBanDaXem(
+                        tin.phienBanCapNhat(),
+                        duLieu.phienBanCapNhatDaXem(),
+                        tin.phienBanHienTaiId(),
+                        duLieu.phienBanDaXemId()
+                ),
+                QuyTacQuanLyTin.choPhepSua(tin.trangThai())
+        );
+        boolean anhHopLe = anhTinRepository.kiemTraAnhChoSuaTin(
+                duLieu.nguoiSuaId(),
+                phienBanId -> {
+                    PhienBanLuuTru phienBan = phienBanTheoId.get(phienBanId);
+                    return phienBan != null && phienBan.tinId().equals(duLieu.tinId());
+                },
+                duLieu.anhIds()
+        );
+        if (!anhHopLe) {
+            throw new LoiNghiepVuQuanLyTinException(
+                    LoaiLoiQuanLyTin.ANH_KHONG_HOP_LE,
+                    "Danh sách ảnh chứa mã ảnh không tồn tại, không thuộc chủ tin hoặc không được phép dùng lại."
+            );
+        }
+
+        UUID phienBanMoiId = UUID.randomUUID();
+        int soPhienBanMoi = phienBanTheoId.values().stream()
+                .filter(pb -> pb.tinId().equals(duLieu.tinId()))
+                .mapToInt(PhienBanLuuTru::soPhienBan)
+                .max()
+                .orElse(0) + 1;
+        anhTinRepository.ganAnhChoPhienBanSua(duLieu.nguoiSuaId(), phienBanMoiId, duLieu.anhIds());
+
+        long phienBanCapNhatMoi = tin.phienBanCapNhat() + 1;
+        phienBanTheoId.put(phienBanMoiId, new PhienBanLuuTru(
+                phienBanMoiId,
+                duLieu.tinId(),
+                soPhienBanMoi,
+                duLieu.noiDung(),
+                List.copyOf(duLieu.anhIds()),
+                duLieu.ketQuaSoBo(),
+                TRANG_THAI_CHO_KIEM_DUYET,
+                duLieu.thoiDiem()
+        ));
+        tinTheoId.put(duLieu.tinId(), new TinLuuTru(
+                tin.id(),
+                tin.chuId(),
+                TRANG_THAI_CHO_KIEM_DUYET,
+                tin.ngayDang(),
+                phienBanMoiId,
+                tin.phienBanDaDuyetId(),
+                phienBanCapNhatMoi
+        ));
+
+        TinGhiKetQua ketQua = new TinGhiKetQua(duLieu.tinId(), phienBanMoiId, TRANG_THAI_CHO_KIEM_DUYET, phienBanCapNhatMoi);
+        yeuCauGhiTheoKhoa.put(khoaYeuCau, new KetQuaYeuCauGhi(duLieu.duLieuBam(), ketQua));
+        ghiAudit(
+                duLieu.nguoiSuaId(),
+                duLieu.tinId(),
+                phienBanMoiId,
+                LOAI_THAO_TAC_SUA_TIN,
+                QuyTacQuanLyTin.duLieuAuditSua(
+                        tin.trangThai(),
+                        tin.phienBanHienTaiId(),
+                        tin.phienBanCapNhat(),
+                        phienBanMoiId,
+                        soPhienBanMoi,
+                        phienBanCapNhatMoi
+                ),
+                duLieu.thoiDiem()
+        );
+        return ketQua;
+    }
+
+    @Override
+    public synchronized TinGhiKetQua xoaTinTrongTransaction(DuLieuXoaTin duLieu) {
+        String khoaYeuCau = khoaYeuCau(duLieu.nguoiXoaId(), LOAI_THAO_TAC_XOA_TIN, duLieu.maYDinh());
+        KetQuaYeuCauGhi daLuu = yeuCauGhiTheoKhoa.get(khoaYeuCau);
+        if (daLuu != null) {
+            return phatLaiKetQuaDaGhi(daLuu, duLieu.duLieuBam());
+        }
+
+        TinLuuTru tin = docTinHoacBaoLoi(duLieu.tinId());
+        kiemTraDieuKienGhi(
+                QuyTacQuanLyTin.dungPhienBanCapNhat(tin.phienBanCapNhat(), duLieu.phienBanCapNhatDaXem()),
+                QuyTacQuanLyTin.choPhepXoa(tin.trangThai())
+        );
+
+        long phienBanCapNhatMoi = tin.phienBanCapNhat() + 1;
+        tinTheoId.put(duLieu.tinId(), new TinLuuTru(
+                tin.id(),
+                tin.chuId(),
+                TRANG_THAI_DA_XOA,
+                tin.ngayDang(),
+                tin.phienBanHienTaiId(),
+                tin.phienBanDaDuyetId(),
+                phienBanCapNhatMoi
+        ));
+
+        TinGhiKetQua ketQua = new TinGhiKetQua(
+                duLieu.tinId(),
+                tin.phienBanHienTaiId(),
+                TRANG_THAI_DA_XOA,
+                phienBanCapNhatMoi
+        );
+        yeuCauGhiTheoKhoa.put(khoaYeuCau, new KetQuaYeuCauGhi(duLieu.duLieuBam(), ketQua));
+        ghiAudit(
+                duLieu.nguoiXoaId(),
+                duLieu.tinId(),
+                tin.phienBanHienTaiId(),
+                LOAI_THAO_TAC_XOA_TIN,
+                QuyTacQuanLyTin.duLieuAuditXoa(tin.trangThai(), tin.phienBanCapNhat(), phienBanCapNhatMoi),
+                duLieu.thoiDiem()
+        );
+        return ketQua;
+    }
+
+    public synchronized void datTrangThaiTinChoTest(UUID tinId, String trangThai, UUID phienBanDaDuyetId) {
+        TinLuuTru tin = docTinHoacBaoLoi(tinId);
+        tinTheoId.put(tinId, new TinLuuTru(
+                tin.id(),
+                tin.chuId(),
+                trangThai,
+                tin.ngayDang(),
+                tin.phienBanHienTaiId(),
+                phienBanDaDuyetId,
+                tin.phienBanCapNhat()
+        ));
+    }
+
+    private TinLuuTru docTinHoacBaoLoi(UUID tinId) {
+        TinLuuTru tin = tinTheoId.get(tinId);
+        if (tin == null) {
+            throw new LoiNghiepVuQuanLyTinException(LoaiLoiQuanLyTin.TIN_KHONG_TON_TAI, "Không tìm thấy tin.");
+        }
+        return tin;
+    }
+
+    private static TinGhiKetQua phatLaiKetQuaDaGhi(KetQuaYeuCauGhi daLuu, String duLieuBam) {
+        if (!daLuu.duLieuBam().equals(duLieuBam)) {
+            throw new LoiNghiepVuQuanLyTinException(
+                    LoaiLoiQuanLyTin.XUNG_DOT_MA_Y_DINH,
+                    "Mã Idempotency-Key đã được sử dụng cho một nội dung yêu cầu khác."
+            );
+        }
+        return daLuu.ketQua();
+    }
+
+    private static void kiemTraDieuKienGhi(boolean dungPhienBan, boolean trangThaiChoPhep) {
+        if (!dungPhienBan) {
+            throw new LoiNghiepVuQuanLyTinException(
+                    LoaiLoiQuanLyTin.PHIEN_BAN_CU,
+                    "Tin đã thay đổi. Hãy tải lại trước khi thao tác."
+            );
+        }
+        if (!trangThaiChoPhep) {
+            throw new LoiNghiepVuQuanLyTinException(
+                    LoaiLoiQuanLyTin.TRANG_THAI_KHONG_HOP_LE,
+                    "Trạng thái hiện tại của tin không cho phép thao tác này."
+            );
+        }
+    }
+
+    private void ghiAudit(
+            UUID nguoiThucHienId,
+            UUID tinId,
+            UUID phienBanId,
+            String hanhDong,
+            String duLieuAuditJson,
+            Instant thoiDiem
+    ) {
+        UUID auditId = UUID.randomUUID();
+        auditTheoId.put(auditId, new AuditLuuTru(
+                auditId,
+                nguoiThucHienId,
+                tinId,
+                phienBanId,
+                hanhDong,
+                duLieuAuditJson,
+                thoiDiem
+        ));
     }
 
     private static String khoaYeuCau(UUID taiKhoanId, String loaiThaoTac, String maYDinh) {
