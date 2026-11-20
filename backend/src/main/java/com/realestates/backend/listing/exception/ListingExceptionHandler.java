@@ -29,6 +29,34 @@ public class ListingExceptionHandler {
         );
     }
 
+    @ExceptionHandler(ListingNotFoundException.class)
+    public ResponseEntity<LoiApiResponse> handleListingNotFound(
+            ListingNotFoundException ex,
+            HttpServletRequest request
+    ) {
+        return AuthExceptionHandler.buildErrorResponse(
+                HttpStatus.NOT_FOUND,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
+    @ExceptionHandler(ListingPreconditionException.class)
+    public ResponseEntity<LoiApiResponse> handleListingPrecondition(
+            ListingPreconditionException ex,
+            HttpServletRequest request
+    ) {
+        return AuthExceptionHandler.buildErrorResponse(
+                ex.laThieuIfMatch() ? HttpStatus.PRECONDITION_REQUIRED : HttpStatus.PRECONDITION_FAILED,
+                ex.getMaLoi(),
+                ex.getMessage(),
+                List.of(),
+                request
+        );
+    }
+
     @ExceptionHandler(MapServiceUnavailableException.class)
     public ResponseEntity<LoiApiResponse> handleMapUnavailable(
             MapServiceUnavailableException ex,
