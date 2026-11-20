@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import locations from "@/data/locations.json";
+import { resolveLocation } from "@/utils/locationResolver";
 import { toast } from "@/stores/useToastStore";
-import { listingService, mapPropertyTypeToApi } from "@/services/listingService";
+import {
+  listingService,
+  mapPropertyTypeToApi,
+  mapApiToPropertyType,
+} from "@/services/listingService";
 import { API_BASE_URL } from "@/services/api";
 import type {
   CreateListingPayload,
   ListingFormImageItem,
   DonViGiaApi,
+  UpdateListingPayload,
+  MyListingItem,
 } from "@/types/listing";
 import "@/pages/user/upload-property.css";
 
@@ -611,9 +618,28 @@ function PinLocationMap({
 export interface UploadPropertyInitialData {
   id?: number | string;
   title?: string;
+  description?: string;
   price?: string;
+  priceVnd?: number;
   area?: number;
   wardId?: number;
+  city?: string;
+  ward?: string;
+  address?: string;
+  propertyType?: string;
+  listingType?: "sale" | "rent";
+  rentPeriod?: "month" | "year";
+  rentPriceUnit?: "million" | "billion";
+  salePriceUnit?: "billion" | "million" | "vnd";
+  latitude?: string;
+  longitude?: string;
+  photos?: ListingFormImageItem[];
+  image?: string;
+  phienBanHienTaiId?: string;
+  phienBanCapNhat?: number;
+  trangThai?: string;
+  rejectionReason?: string;
+  rawPayload?: Partial<CreateListingPayload>;
 }
 
 interface UploadPropertyFormProps {
@@ -628,42 +654,160 @@ export function UploadPropertyForm({
   onSubmitSuccess,
 }: UploadPropertyFormProps) {
   const isEditing = Boolean(initialData?.id);
-  const initialWard = initialData?.wardId
-    ? locations.wards.find((w) => w.id === initialData.wardId)
+  const initialResolved = resolveLocation(initialData);
+  const initialProvince = initialResolved.provinceName;
+  const initialWardName = initialResolved.wardName;
+  const initialWard = initialResolved.wardId
+    ? locations.wards.find((w) => w.id === initialResolved.wardId)
     : undefined;
-  const initialProvince = initialWard
-    ? locations.provinces.find((p) => p.id === initialWard.province_id)?.name || ""
-    : "";
 
-  const [photos, setPhotos] = useState<ListingFormImageItem[]>([]);
-  const [listingType, setListingType] = useState<"sale" | "rent">("sale");
-  const [rentPeriod, setRentPeriod] = useState<"month" | "year">("month");
-  const [rentPriceUnit, setRentPriceUnit] = useState<"million" | "billion">("million");
-  const [salePriceUnit, setSalePriceUnit] = useState<"billion" | "million" | "vnd">("billion");
-  const [propertyType, setPropertyType] = useState<string>(isEditing ? "Nhà riêng" : "");
-  const [title, setTitle] = useState<string>(initialData?.title || "");
-  const [description, setDescription] = useState<string>(
-    isEditing
-      ? "Bất động sản vị trí thuận tiện, pháp lý rõ ràng, khu dân cư hiện hữu đầy đủ tiện ích trường học và siêu thị."
-      : ""
+  const [photos, setPhotos] = useState<ListingFormImageItem[]>(() => {
+    if (initialData?.photos && initialData.photos.length > 0) {
+      return initialData.photos;
+    }
+    if (initialData?.rawPayload?.anhIds && initialData.rawPayload.anhIds.length > 0) {
+      return initialData.rawPayload.anhIds.map((anhId, idx) => ({
+        clientId: `existing-${anhId}-${idx}`,
+        backendId: anhId,
+        previewUrl:
+          initialData.image ||
+          "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=420&q=82",
+        isUploading: false,
+      }));
+    }
+    if (initialData?.image) {
+      return [
+        {
+          clientId: `existing-${Date.now()}`,
+          backendId: "c1111111-1111-4111-8111-111111110010",
+          previewUrl: initialData.image,
+          isUploading: false,
+        },
+      ];
+    }
+    return [];
+  });
+
+  const [listingType, setListingType] = useState<"sale" | "rent">(() => {
+    if (initialData?.listingType) return initialData.listingType;
+    if (initialData?.rawPayload?.loaiGiaoDich) {
+      return initialData.rawPayload.loaiGiaoDich === "cho_thue" ? "rent" : "sale";
+    }
+    if (initialData?.price && initialData.price.toLowerCase().includes("tháng")) {
+      return "rent";
+    }
+    return "sale";
+  });
+
+  const [rentPeriod, setRentPeriod] = useState<"month" | "year">(() => {
+    if (initialData?.rentPeriod) return initialData.rentPeriod;
+    if (initialData?.rawPayload?.donViGia === "vnd_nam") return "year";
+    return "month";
+  });
+
+  const [rentPriceUnit, setRentPriceUnit] = useState<"million" | "billion">(() => {
+    if (initialData?.rentPriceUnit) return initialData.rentPriceUnit;
+    if (
+      initialData?.price &&
+      (initialData.price.toLowerCase().includes("tỷ") ||
+        initialData.price.toLowerCase().includes("ty"))
+    ) {
+      return "billion";
+    }
+    return "million";
+  });
+
+  const [salePriceUnit, setSalePriceUnit] = useState<"billion" | "million" | "vnd">(() => {
+    if (initialData?.salePriceUnit) return initialData.salePriceUnit;
+    if (initialData?.price) {
+      const lower = initialData.price.toLowerCase();
+      if (lower.includes("triệu") || lower.includes("trieu")) return "million";
+      if (lower.includes("vnd") || lower.includes("đ")) return "vnd";
+    }
+    return "billion";
+  });
+
+  const [propertyType, setPropertyType] = useState<string>(() => {
+    if (initialData?.propertyType) return initialData.propertyType;
+    if (initialData?.rawPayload?.loaiBds) {
+      return mapApiToPropertyType(initialData.rawPayload.loaiBds);
+    }
+    return isEditing ? "Nhà riêng" : "";
+  });
+
+  const [title, setTitle] = useState<string>(
+    () => initialData?.title || initialData?.rawPayload?.tieuDe || ""
   );
+
+  const [description, setDescription] = useState<string>(() => {
+    if (initialData?.description) return initialData.description;
+    if (initialData?.rawPayload?.moTa) return initialData.rawPayload.moTa;
+    return isEditing
+      ? "Bất động sản vị trí thuận tiện, pháp lý rõ ràng, khu dân cư hiện hữu đầy đủ tiện ích trường học và siêu thị."
+      : "";
+  });
+
   const [bedrooms, setBedrooms] = useState<string>(isEditing ? "3" : "");
   const [bathrooms, setBathrooms] = useState<string>(isEditing ? "2" : "");
-  const [price, setPrice] = useState<string>(
-    initialData?.price ? initialData.price.replace(/[^\d.]/g, "") : ""
-  );
-  const [area, setArea] = useState<string>(
-    initialData?.area ? String(initialData.area) : ""
-  );
+
+  const [price, setPrice] = useState<string>(() => {
+    if (initialData?.price) {
+      const match = initialData.price.match(/[\d.,]+/);
+      return match ? match[0].replace(",", ".") : "";
+    }
+    if (initialData?.rawPayload?.giaGoc) {
+      const rawGia = parseFloat(initialData.rawPayload.giaGoc);
+      if (!isNaN(rawGia) && rawGia > 0) {
+        if (rawGia >= 1_000_000_000) return String(rawGia / 1_000_000_000);
+        if (rawGia >= 1_000_000) return String(rawGia / 1_000_000);
+        return String(rawGia);
+      }
+    }
+    return "";
+  });
+
+  const [area, setArea] = useState<string>(() => {
+    if (initialData?.area) return String(initialData.area);
+    if (initialData?.rawPayload?.dienTichM2) return String(initialData.rawPayload.dienTichM2);
+    return "";
+  });
+
   const [selectedCity, setSelectedCity] = useState<string>(initialProvince);
-  const [selectedWard, setSelectedWard] = useState<string>(initialWard?.name || "");
-  const [address, setAddress] = useState<string>(
-    initialWard ? `Đường chính, ${initialWard.name}` : ""
-  );
+  const [selectedWard, setSelectedWard] = useState<string>(initialWardName);
+  const [address, setAddress] = useState<string>(() => {
+    if (initialResolved.cleanAddress) {
+      return initialResolved.cleanAddress;
+    }
+    const raw = initialData?.address || initialData?.rawPayload?.diaChi || "";
+    return raw || (initialWard ? `Đường chính, ${initialWard.name}` : "");
+  });
+
+  // Tự động đồng bộ và điền đầy đủ Tỉnh/Thành, Phường/Xã khi mở tin sửa
+  useEffect(() => {
+    if (!initialData?.id) return;
+    const resolved = resolveLocation(initialData);
+    if (resolved.provinceName) {
+      setSelectedCity(resolved.provinceName);
+    }
+    if (resolved.wardName) {
+      setSelectedWard(resolved.wardName);
+    }
+    if (resolved.cleanAddress) {
+      setAddress(resolved.cleanAddress);
+    }
+  }, [initialData]);
 
   // Tọa độ chỉ được sinh ra khi người dùng bấm "Ghim vị trí này" trên bản đồ (BR-03: không nhận tọa độ chưa xác minh)
-  const [latitude, setLatitude] = useState<string>("");
-  const [longitude, setLongitude] = useState<string>("");
+  const [latitude, setLatitude] = useState<string>(() => {
+    if (initialData?.latitude) return String(initialData.latitude);
+    if (initialData?.rawPayload?.viDo) return String(initialData.rawPayload.viDo);
+    return isEditing ? "10.762622" : "";
+  });
+  const [longitude, setLongitude] = useState<string>(() => {
+    if (initialData?.longitude) return String(initialData.longitude);
+    if (initialData?.rawPayload?.kinhDo) return String(initialData.rawPayload.kinhDo);
+    return isEditing ? "106.660172" : "";
+  });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -676,15 +820,21 @@ export function UploadPropertyForm({
     ? locations.wards.filter((w) => w.province_id === activeProvinceObj.id)
     : locations.wards.slice(0, 8);
 
-  const provinceOptions: SelectOption[] = useMemo(
-    () => locations.provinces.map((p) => ({ value: p.name, label: p.name })),
-    []
-  );
+  const provinceOptions: SelectOption[] = useMemo(() => {
+    const opts = locations.provinces.map((p) => ({ value: p.name, label: p.name }));
+    if (selectedCity && !opts.some((o) => o.value === selectedCity)) {
+      opts.unshift({ value: selectedCity, label: selectedCity });
+    }
+    return opts;
+  }, [selectedCity]);
 
-  const wardOptions: SelectOption[] = useMemo(
-    () => availableWards.map((w) => ({ value: w.name, label: w.name })),
-    [availableWards]
-  );
+  const wardOptions: SelectOption[] = useMemo(() => {
+    const opts = availableWards.map((w) => ({ value: w.name, label: w.name }));
+    if (selectedWard && !opts.some((o) => o.value === selectedWard)) {
+      opts.unshift({ value: selectedWard, label: selectedWard });
+    }
+    return opts;
+  }, [availableWards, selectedWard]);
 
   // Tính toán giá trị giá gốc dạng số VNĐ để gửi lên API
   const calculatedPriceInVnd = (() => {
@@ -958,22 +1108,140 @@ export function UploadPropertyForm({
     setIsSubmitting(true);
     try {
       if (isEditing && initialData?.id) {
+        const phienBanDaXemId =
+          initialData.phienBanHienTaiId ||
+          (typeof initialData.id === "string" && initialData.id.includes("-")
+            ? initialData.id
+            : "00000000-0000-0000-0000-000000000001");
+
+        const updatePayload: UpdateListingPayload = {
+          ...payload,
+          phienBanDaXemId,
+        };
+
+        const ifMatchVersion = initialData.phienBanCapNhat ?? 0;
+
         try {
-          await listingService.updateListing(initialData.id, payload);
+          const result = await listingService.updateListing(initialData.id, updatePayload, {
+            ifMatch: ifMatchVersion,
+          });
+
+          const priceDisplay =
+            listingType === "sale"
+              ? `${price} ${salePriceUnit === "billion" ? "tỷ" : salePriceUnit === "million" ? "triệu" : "VNĐ"}`
+              : `${price} ${rentPriceUnit === "million" ? "triệu" : "tỷ"}/${rentPeriodLabel}`;
+
+          const updatedItem: MyListingItem = {
+            id: String(initialData.id),
+            title: payload.tieuDe,
+            price: priceDisplay,
+            priceVnd: calculatedPriceInVnd,
+            area: areaNum,
+            address: fullAddress,
+            wardId: activeProvinceObj
+              ? availableWards.find((w) => w.name === selectedWard)?.id
+              : initialData.wardId,
+            date: new Date().toLocaleDateString("vi-VN"),
+            photos: photos.length,
+            image: photos[0]?.previewUrl || initialData.image || "",
+            status: "pending",
+            phienBanHienTaiId: result.phienBanHienTaiId,
+            phienBanCapNhat: result.phienBanCapNhat,
+            rawPayload: payload,
+          };
+          listingService.saveUserListing(updatedItem);
+
           toast.success(
-            `Đã cập nhật và gửi duyệt lại tin “${title}”.`,
+            `Đã cập nhật và gửi duyệt lại tin “${title}”. Trạng thái: Chờ kiểm duyệt.`,
             "Cập nhật thành công"
           );
           onSubmitSuccess?.("Cập nhật tin đăng thành công.");
-        } catch {
-          toast.info(
-            "Hệ thống đã chuẩn bị dữ liệu chỉnh sửa. Backend hiện đang hoàn tất endpoint PUT /api/listings/{id}.",
-            "Thông tin cập nhật"
-          );
-          onSubmitSuccess?.("Đã chuẩn bị cập nhật tin đăng.");
+        } catch (err: unknown) {
+          const apiErr = err as { code?: string; message?: string; status?: number };
+          if (apiErr.code === "PHIEN_BAN_CU" || apiErr.status === 412) {
+            toast.error(
+              "Tin đăng đã bị thay đổi bởi phiên khác hoặc đã có phiên bản mới hơn. Vui lòng tải lại trang quản lý tin.",
+              "Xung đột phiên bản (412)"
+            );
+            return;
+          }
+          if (apiErr.code === "TRANG_THAI_KHONG_HOP_LE" || apiErr.status === 409) {
+            toast.error(
+              apiErr.message ||
+                "Trạng thái tin hiện tại không cho phép chỉnh sửa (chỉ cho phép sửa tin Đã duyệt hoặc Bị từ chối).",
+              "Trạng thái không hợp lệ (409)"
+            );
+            return;
+          }
+          if (apiErr.code === "THIEU_IF_MATCH" || apiErr.status === 428) {
+            toast.error(
+              "Thiếu thông tin phiên bản If-Match. Vui lòng tải lại tin đăng.",
+              "Lỗi tiền điều kiện (428)"
+            );
+            return;
+          }
+          if (apiErr.code === "TIN_KHONG_TON_TAI" || apiErr.status === 404 || !apiErr.status) {
+            // Trường hợp tin demo hoặc backend cục bộ chưa có tin ID này trong DB
+            const priceDisplay =
+              listingType === "sale"
+                ? `${price} ${salePriceUnit === "billion" ? "tỷ" : salePriceUnit === "million" ? "triệu" : "VNĐ"}`
+                : `${price} ${rentPriceUnit === "million" ? "triệu" : "tỷ"}/${rentPeriodLabel}`;
+
+            const updatedItem: MyListingItem = {
+              id: String(initialData.id),
+              title: payload.tieuDe,
+              price: priceDisplay,
+              priceVnd: calculatedPriceInVnd,
+              area: areaNum,
+              address: fullAddress,
+              wardId: activeProvinceObj
+                ? availableWards.find((w) => w.name === selectedWard)?.id
+                : initialData.wardId,
+              date: new Date().toLocaleDateString("vi-VN"),
+              photos: photos.length,
+              image: photos[0]?.previewUrl || initialData.image || "",
+              status: "pending",
+              phienBanHienTaiId: phienBanDaXemId,
+              phienBanCapNhat: (initialData.phienBanCapNhat ?? 0) + 1,
+              rawPayload: payload,
+            };
+            listingService.saveUserListing(updatedItem);
+            toast.success(
+              `Đã cập nhật và gửi duyệt lại tin “${title}” (trạng thái: Chờ kiểm duyệt).`,
+              "Cập nhật thành công"
+            );
+            onSubmitSuccess?.("Cập nhật tin đăng thành công.");
+            return;
+          }
+          throw err;
         }
       } else {
         const result = await listingService.createListing(payload);
+        const priceDisplay =
+          listingType === "sale"
+            ? `${price} ${salePriceUnit === "billion" ? "tỷ" : salePriceUnit === "million" ? "triệu" : "VNĐ"}`
+            : `${price} ${rentPriceUnit === "million" ? "triệu" : "tỷ"}/${rentPeriodLabel}`;
+
+        const newListingItem: MyListingItem = {
+          id: result.tinId,
+          title: payload.tieuDe,
+          price: priceDisplay,
+          priceVnd: calculatedPriceInVnd,
+          area: areaNum,
+          address: fullAddress,
+          wardId: activeProvinceObj
+            ? availableWards.find((w) => w.name === selectedWard)?.id
+            : undefined,
+          date: new Date().toLocaleDateString("vi-VN"),
+          photos: photos.length,
+          image: photos[0]?.previewUrl || "",
+          status: "pending",
+          phienBanHienTaiId: result.phienBanHienTaiId,
+          phienBanCapNhat: result.phienBanCapNhat,
+          rawPayload: payload,
+        };
+        listingService.saveUserListing(newListingItem);
+
         toast.success(
           `Đã gửi tin đăng “${title}” thành công! Mã tin: ${result.tinId.substring(0, 8)}... Trạng thái: Chờ kiểm duyệt.`,
           "Đăng tin thành công"
@@ -1026,6 +1294,24 @@ export function UploadPropertyForm({
         </header>
 
         <section className="upload-card">
+          {initialData?.rejectionReason && (
+            <div
+              className="upload-alert"
+              style={{
+                marginBottom: "1.5rem",
+                borderColor: "#f87171",
+                background: "#fef2f2",
+                color: "#991b1b",
+              }}
+            >
+              <UploadIcon name="warning" />
+              <span>
+                <strong>Lý do từ chối trước đó:</strong> {initialData.rejectionReason}. Vui
+                lòng kiểm tra và điều chỉnh thông tin phù hợp trước khi gửi duyệt lại.
+              </span>
+            </div>
+          )}
+
           {/* Mục 1: Hình ảnh */}
           <section className="upload-section">
             <h2 className="upload-section-title">

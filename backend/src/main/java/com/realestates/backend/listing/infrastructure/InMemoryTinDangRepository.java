@@ -374,4 +374,49 @@ public class InMemoryTinDangRepository implements TinDangRepository {
     private static String khoaHanMuc(UUID taiKhoanId, LocalDate dauThang) {
         return taiKhoanId + "|" + dauThang;
     }
+
+    @Override
+    public synchronized List<DuLieuTinCuaToi> docDanhSachTinCuaChu(UUID chuId) {
+        if (chuId == null) {
+            return List.of();
+        }
+        return tinTheoId.values().stream()
+                .filter(t -> chuId.equals(t.chuId()) && !TRANG_THAI_DA_XOA.equals(t.trangThai()))
+                .sorted((a, b) -> b.ngayDang().compareTo(a.ngayDang()))
+                .map(t -> {
+                    PhienBanLuuTru pb = phienBanTheoId.get(t.phienBanHienTaiId());
+                    if (pb == null) return null;
+                    java.math.BigDecimal viDo = null;
+                    java.math.BigDecimal kinhDo = null;
+                    try {
+                        viDo = new java.math.BigDecimal(pb.noiDung().viDo());
+                        kinhDo = new java.math.BigDecimal(pb.noiDung().kinhDo());
+                    } catch (Exception ignored) {
+                    }
+                    return new DuLieuTinCuaToi(
+                            t.id(),
+                            t.phienBanHienTaiId(),
+                            t.trangThai(),
+                            t.phienBanCapNhat(),
+                            t.ngayDang(),
+                            pb.soPhienBan(),
+                            pb.noiDung().tieuDe(),
+                            pb.noiDung().moTa(),
+                            pb.noiDung().loaiGiaoDich().getGiaTri(),
+                            pb.noiDung().loaiBds().getGiaTri(),
+                            pb.noiDung().giaGoc(),
+                            pb.noiDung().donViGia().getGiaTri(),
+                            pb.noiDung().dienTichM2(),
+                            pb.noiDung().diaChi(),
+                            pb.noiDung().khuVuc(),
+                            viDo,
+                            kinhDo,
+                            pb.ketQuaKiemDuyet(),
+                            null,
+                            pb.anhIds()
+                    );
+                })
+                .filter(Objects::nonNull)
+                .toList();
+    }
 }

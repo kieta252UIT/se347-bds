@@ -77,6 +77,30 @@ public interface TinDangRepository {
     ) {
     }
 
+    record DuLieuTinCuaToi(
+            UUID tinId,
+            UUID phienBanHienTaiId,
+            String trangThai,
+            long phienBanCapNhat,
+            Instant ngayDang,
+            int soPhienBan,
+            String tieuDe,
+            String moTa,
+            String loaiGiaoDich,
+            String loaiBds,
+            java.math.BigDecimal giaGoc,
+            String donViGia,
+            java.math.BigDecimal dienTichM2,
+            String diaChi,
+            String khuVuc,
+            java.math.BigDecimal viDo,
+            java.math.BigDecimal kinhDo,
+            String ketQuaKiemDuyet,
+            String lyDoTuChoi,
+            List<UUID> anhIds
+    ) {
+    }
+
     enum LoaiLoiQuanLyTin {
         TIN_KHONG_TON_TAI,
         PHIEN_BAN_CU,
@@ -110,4 +134,6 @@ public interface TinDangRepository {
     TinGhiKetQua suaTinTrongTransaction(DuLieuSuaTin duLieu);
 
     TinGhiKetQua xoaTinTrongTransaction(DuLieuXoaTin duLieu);
+
+    List<DuLieuTinCuaToi> docDanhSachTinCuaChu(UUID chuId);
 }

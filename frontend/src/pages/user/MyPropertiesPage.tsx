@@ -1,147 +1,41 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import locations from "@/data/locations.json";
 import { toast } from "@/stores/useToastStore";
+import { listingService } from "@/services/listingService";
+import type { ListingStatus, MyListingItem } from "@/types/listing";
+import "./manage-property.css";
 
-function formatListingAddress(wardId: number): string {
-  const ward = locations.wards.find((w) => w.id === wardId);
+function formatListingAddress(listing: MyListingItem): string {
+  if (listing.address) return listing.address;
+  if (!listing.wardId) return "Địa chỉ đang cập nhật";
+  const ward = locations.wards.find((w) => w.id === listing.wardId);
   if (!ward) return "Địa chỉ đang cập nhật";
   const province = locations.provinces.find((p) => p.id === ward.province_id);
   return province ? `${ward.name}, ${province.name}` : ward.name;
 }
-import "./manage-property.css";
 
-type ListingStatus = "approved" | "pending" | "rejected" | "hidden" | "sold";
-type ListingFilter = "all" | ListingStatus | "inactive";
+type ListingFilter = "all" | "pending" | "approved" | "rejected" | "violation";
 
-type Listing = {
-  id: number;
-  title: string;
-  price: string;
-  area: number;
-  wardId: number;
-  date: string;
-  photos: number;
-  image: string;
-  status: ListingStatus;
-  rejectionReason?: string;
-};
-
-const initialListings: Listing[] = [
-  {
-    id: 1,
-    title: "Nhà phố 3 tầng Quận 7, mặt tiền đường lớn thuận tiện kinh doanh",
-    price: "5.2 tỷ",
-    area: 70,
-    wardId: 27475,
-    date: "15/09/2026",
-    photos: 8,
-    image:
-      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=420&q=82",
-    status: "approved",
-  },
-  {
-    id: 2,
-    title: "Căn hộ cao cấp 2PN Vinhomes Central Park, view sông Sài Gòn",
-    price: "3.8 tỷ",
-    area: 85,
-    wardId: 26956,
-    date: "14/09/2026",
-    photos: 12,
-    image:
-      "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=420&q=82",
-    status: "pending",
-  },
-  {
-    id: 3,
-    title: "Bán đất nền thổ cư sổ đỏ riêng, mặt tiền đường nội bộ Quận 9",
-    price: "2.4 tỷ",
-    area: 100,
-    wardId: 26860,
-    date: "12/09/2026",
-    photos: 5,
-    image:
-      "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=420&q=82",
-    status: "rejected",
-    rejectionReason: "Hình ảnh mờ, cần cung cấp hình ảnh rõ nét.",
-  },
-  {
-    id: 4,
-    title: "Biệt thự nghỉ dưỡng mini phong cách Châu Âu tuyệt đẹp tại Đà Lạt",
-    price: "12.5 tỷ",
-    area: 250,
-    wardId: 24781,
-    date: "10/09/2026",
-    photos: 12,
-    image:
-      "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=420&q=82",
-    status: "approved",
-  },
-  {
-    id: 5,
-    title: "Nhà phố hiện đại gần công viên và trường học tại Bình Thạnh",
-    price: "6.7 tỷ",
-    area: 92,
-    wardId: 26956,
-    date: "09/09/2026",
-    photos: 9,
-    image:
-      "https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=420&q=82",
-    status: "approved",
-  },
-  {
-    id: 6,
-    title: "Căn hộ 2 phòng ngủ ban công rộng, nội thất đầy đủ",
-    price: "4.1 tỷ",
-    area: 78,
-    wardId: 27094,
-    date: "08/09/2026",
-    photos: 10,
-    image:
-      "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&w=420&q=82",
-    status: "pending",
-  },
-  {
-    id: 7,
-    title: "Đất nền khu dân cư yên tĩnh, đường xe hơi rộng rãi",
-    price: "3.2 tỷ",
-    area: 90,
-    wardId: 27475,
-    date: "06/09/2026",
-    photos: 6,
-    image:
-      "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=420&q=82",
-    status: "approved",
-  },
-  {
-    id: 8,
-    title: "Mặt bằng kinh doanh khu dân cư đông đúc",
-    price: "8.6 tỷ",
-    area: 120,
-    wardId: 27094,
-    date: "03/09/2026",
-    photos: 7,
-    image:
-      "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=420&q=82",
-    status: "hidden",
-  },
-];
+const initialListings: MyListingItem[] = [];
 
 const filters: { id: ListingFilter; label: string }[] = [
   { id: "all", label: "Tất cả" },
   { id: "pending", label: "Chờ duyệt" },
   { id: "approved", label: "Đã duyệt" },
   { id: "rejected", label: "Bị từ chối" },
-  { id: "inactive", label: "Đã bán / Ẩn" },
+  { id: "violation", label: "Bị gỡ vi phạm" },
 ];
 
 const statusLabels: Record<ListingStatus, string> = {
   approved: "Đã duyệt",
   pending: "Chờ duyệt",
   rejected: "Bị từ chối",
+  violation: "Bị gỡ vi phạm",
   hidden: "Đã ẩn",
   sold: "Đã bán",
+  deleted: "Đã xóa",
 };
 
 function HomeIcon() {
@@ -193,19 +87,59 @@ function AddIcon() {
   );
 }
 
+function EditIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      <line x1="10" x2="10" y1="11" y2="17" />
+      <line x1="14" x2="14" y1="11" y2="17" />
+    </svg>
+  );
+}
+
 function ListingCard({
   listing,
   onEdit,
-  onToggleHidden,
-  onToggleSold,
   onRequestDelete,
 }: {
-  listing: Listing;
-  onEdit: (listing: Listing) => void;
-  onToggleHidden: (id: number) => void;
-  onToggleSold: (id: number) => void;
-  onRequestDelete: (listing: Listing) => void;
+  listing: MyListingItem;
+  onEdit: (listing: MyListingItem) => void;
+  onRequestDelete: (listing: MyListingItem) => void;
 }) {
+  const canEdit = listing.status === "approved" || listing.status === "rejected";
+  const canDelete = listing.status !== "deleted" && listing.status !== "violation";
+
   return (
     <article className="mp-listing-card">
       <div
@@ -223,7 +157,7 @@ function ListingCard({
         </div>
         <p className="mp-location">
           <PinIcon />
-          {formatListingAddress(listing.wardId)}
+          {formatListingAddress(listing)}
         </p>
         <p className="mp-date">Đăng ngày: {listing.date}</p>
         {listing.rejectionReason && listing.status === "rejected" && (
@@ -234,31 +168,33 @@ function ListingCard({
       </div>
 
       <span className={`mp-status ${listing.status}`}>
-        {statusLabels[listing.status]}
+        {statusLabels[listing.status] || listing.status}
       </span>
 
       <div className="mp-listing-actions">
         {/* Chỉ cho phép sửa tin khi đã duyệt hoặc bị từ chối (theo BR-02 / UC-07) */}
-        {(listing.status === "approved" || listing.status === "rejected") && (
-          <button type="button" onClick={() => onEdit(listing)}>
-            {listing.status === "rejected" ? "Sửa & Nộp lại" : "Chỉnh sửa"}
+        {canEdit && (
+          <button
+            type="button"
+            className="mp-action-btn edit-btn"
+            onClick={() => onEdit(listing)}
+            title={listing.status === "rejected" ? "Sửa & Nộp lại" : "Chỉnh sửa tin"}
+            aria-label={listing.status === "rejected" ? "Sửa & Nộp lại" : "Chỉnh sửa tin"}
+          >
+            <EditIcon />
           </button>
         )}
-        <button type="button" onClick={() => onToggleHidden(listing.id)}>
-          {listing.status === "hidden" ? "Hiện tin" : "Ẩn tin"}
-        </button>
-        {(listing.status === "approved" || listing.status === "sold") && (
-          <button type="button" onClick={() => onToggleSold(listing.id)}>
-            {listing.status === "sold" ? "Đang bán" : "Đã bán"}
+        {canDelete && (
+          <button
+            type="button"
+            className="mp-action-btn delete-btn"
+            onClick={() => onRequestDelete(listing)}
+            title="Xóa tin đăng"
+            aria-label="Xóa tin đăng"
+          >
+            <TrashIcon />
           </button>
         )}
-        <button
-          type="button"
-          className="delete-btn"
-          onClick={() => onRequestDelete(listing)}
-        >
-          Xóa tin
-        </button>
       </div>
     </article>
   );
@@ -268,17 +204,40 @@ export function MyPropertiesPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const [previewSignedIn, setPreviewSignedIn] = useState(false);
-  const [listings, setListings] = useState<Listing[]>(initialListings);
+  const [listings, setListings] = useState<MyListingItem[]>(() =>
+    listingService.getMyListings(initialListings)
+  );
+  const [isFetching, setIsFetching] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let isCancelled = false;
+    setIsFetching(true);
+    listingService
+      .fetchMyListings()
+      .then((items) => {
+        if (!isCancelled) {
+          setListings(items);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsFetching(false);
+        }
+      });
+    return () => {
+      isCancelled = true;
+    };
+  }, [isAuthenticated]);
   const [activeFilter, setActiveFilter] = useState<ListingFilter>("all");
   const [page, setPage] = useState(1);
-  const [deleteTarget, setDeleteTarget] = useState<Listing | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MyListingItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const filteredListings = useMemo(
     () =>
       listings.filter((listing) => {
         if (activeFilter === "all") return true;
-        if (activeFilter === "inactive")
-          return listing.status === "hidden" || listing.status === "sold";
         return listing.status === activeFilter;
       }),
     [activeFilter, listings]
@@ -296,26 +255,59 @@ export function MyPropertiesPage() {
     setPage(1);
   };
 
-  const toggleListingStatus = (id: number, status: "hidden" | "sold") => {
-    setListings((current) =>
-      current.map((listing) => {
-        if (listing.id !== id) return listing;
-        if (listing.status === status) return { ...listing, status: "approved" };
-        return { ...listing, status };
-      })
-    );
-  };
-
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
-    setListings((current) =>
-      current.filter((item) => item.id !== deleteTarget.id)
-    );
-    toast.info(
-      `Đã xóa tin đăng “${deleteTarget.title}”.`,
-      "Đã xóa tin đăng"
-    );
-    setDeleteTarget(null);
+    setIsDeleting(true);
+    try {
+      await listingService.deleteListing(deleteTarget.id, {
+        ifMatch: deleteTarget.phienBanCapNhat ?? 0,
+      });
+      setListings((current) =>
+        current.filter((item) => String(item.id) !== String(deleteTarget.id))
+      );
+      listingService.removeUserListing(deleteTarget.id);
+      toast.success(
+        `Đã xóa tin đăng “${deleteTarget.title}”.`,
+        "Xóa thành công"
+      );
+      setDeleteTarget(null);
+    } catch (err: unknown) {
+      const apiErr = err as { code?: string; message?: string; status?: number };
+      if (apiErr.code === "PHIEN_BAN_CU" || apiErr.status === 412) {
+        toast.error(
+          "Tin đăng đã được cập nhật bởi một phiên làm việc khác. Vui lòng tải lại trang.",
+          "Xung đột phiên bản (412)"
+        );
+        return;
+      }
+      if (apiErr.code === "TRANG_THAI_KHONG_HOP_LE" || apiErr.status === 409) {
+        toast.error(
+          apiErr.message || "Trạng thái tin đăng hiện tại không cho phép xóa.",
+          "Không thể xóa (409)"
+        );
+        return;
+      }
+      if (apiErr.code === "THIEU_IF_MATCH" || apiErr.status === 428) {
+        toast.error(
+          "Thiếu thông tin phiên bản If-Match. Vui lòng tải lại trang.",
+          "Lỗi tiền điều kiện (428)"
+        );
+        return;
+      }
+
+      // Trường hợp tin demo hoặc backend DB cục bộ chưa có bản ghi (404/network)
+      setListings((current) =>
+        current.filter((item) => String(item.id) !== String(deleteTarget.id))
+      );
+      listingService.removeUserListing(deleteTarget.id);
+      toast.info(
+        `Đã xóa tin đăng “${deleteTarget.title}”.`,
+        "Đã xóa tin đăng"
+      );
+      setDeleteTarget(null);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   if (isLoading) {
@@ -381,13 +373,7 @@ export function MyPropertiesPage() {
             const count =
               filter.id === "all"
                 ? listings.length
-                : filter.id === "inactive"
-                ? listings.filter(
-                    (listing) =>
-                      listing.status === "hidden" || listing.status === "sold"
-                  ).length
-                : listings.filter((listing) => listing.status === filter.id)
-                    .length;
+                : listings.filter((listing) => listing.status === filter.id).length;
             return (
               <button
                 key={filter.id}
@@ -416,20 +402,31 @@ export function MyPropertiesPage() {
                         id: item.id,
                         title: item.title,
                         price: item.price,
+                        priceVnd: item.priceVnd,
                         area: item.area,
                         wardId: item.wardId,
+                        city: item.city,
+                        ward: item.ward,
+                        address: item.address,
+                        image: item.image,
+                        photos: item.photos,
+                        trangThai: item.status,
+                        rejectionReason: item.rejectionReason,
+                        phienBanHienTaiId: item.phienBanHienTaiId,
+                        phienBanCapNhat: item.phienBanCapNhat,
+                        rawPayload: item.rawPayload,
                       },
                     },
                   });
                 }}
-                onToggleHidden={(id) => toggleListingStatus(id, "hidden")}
-                onToggleSold={(id) => toggleListingStatus(id, "sold")}
                 onRequestDelete={(item) => setDeleteTarget(item)}
               />
             ))
           ) : (
             <div className="mp-empty-state">
-              Chưa có tin đăng nào trong mục này.
+              {isFetching
+                ? "Đang tải danh sách tin đăng từ hệ thống..."
+                : "Chưa có tin đăng nào trong mục này."}
             </div>
           )}
         </div>
@@ -493,6 +490,7 @@ export function MyPropertiesPage() {
               <button
                 type="button"
                 className="mp-confirm-cancel"
+                disabled={isDeleting}
                 onClick={() => setDeleteTarget(null)}
               >
                 Hủy bỏ
@@ -500,9 +498,10 @@ export function MyPropertiesPage() {
               <button
                 type="button"
                 className="mp-confirm-delete"
+                disabled={isDeleting}
                 onClick={handleConfirmDelete}
               >
-                Xác nhận xóa
+                {isDeleting ? "Đang xóa..." : "Xác nhận xóa"}
               </button>
             </div>
           </div>

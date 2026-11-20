@@ -803,4 +803,74 @@ public class PostgreSqlTinDangRepository implements TinDangRepository {
             }
         }
     }
+
+    @Override
+    public List<DuLieuTinCuaToi> docDanhSachTinCuaChu(UUID chuId) {
+        if (chuId == null) {
+            return List.of();
+        }
+        String sql = """
+                SELECT
+                    t.id AS tin_id,
+                    t.phien_ban_hien_tai_id,
+                    t.trang_thai,
+                    t.phien_ban_cap_nhat,
+                    t.ngay_dang,
+                    p.so_phien_ban,
+                    p.tieu_de,
+                    p.mo_ta,
+                    p.loai_giao_dich,
+                    p.loai_bds,
+                    p.gia_goc,
+                    p.don_vi_gia,
+                    p.dien_tich_m2,
+                    p.dia_chi,
+                    p.khu_vuc,
+                    p.vi_do,
+                    p.kinh_do,
+                    p.ket_qua_kiem_duyet,
+                    p.ly_do_tu_choi
+                FROM se214.tin_bat_dong_san t
+                JOIN se214.phien_ban_tin p ON t.id = p.tin_id AND t.phien_ban_hien_tai_id = p.id
+                WHERE t.chu_id = ?
+                  AND t.trang_thai <> 'da_xoa'
+                ORDER BY t.ngay_dang DESC, t.id DESC
+                """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            UUID phienBanId = rs.getObject("phien_ban_hien_tai_id", UUID.class);
+            List<UUID> anhIds = docAnhIdsCuaPhienBan(phienBanId);
+            Timestamp ngayDangSql = rs.getTimestamp("ngay_dang");
+            Instant ngayDang = ngayDangSql != null ? ngayDangSql.toInstant() : Instant.now();
+            return new DuLieuTinCuaToi(
+                    rs.getObject("tin_id", UUID.class),
+                    phienBanId,
+                    rs.getString("trang_thai"),
+                    rs.getLong("phien_ban_cap_nhat"),
+                    ngayDang,
+                    rs.getInt("so_phien_ban"),
+                    rs.getString("tieu_de"),
+                    rs.getString("mo_ta"),
+                    rs.getString("loai_giao_dich"),
+                    rs.getString("loai_bds"),
+                    rs.getBigDecimal("gia_goc"),
+                    rs.getString("don_vi_gia"),
+                    rs.getBigDecimal("dien_tich_m2"),
+                    rs.getString("dia_chi"),
+                    rs.getString("khu_vuc"),
+                    rs.getBigDecimal("vi_do"),
+                    rs.getBigDecimal("kinh_do"),
+                    rs.getString("ket_qua_kiem_duyet"),
+                    rs.getString("ly_do_tu_choi"),
+                    anhIds
+            );
+        }, chuId);
+    }
+
+    private List<UUID> docAnhIdsCuaPhienBan(UUID phienBanId) {
+        if (phienBanId == null) {
+            return List.of();
+        }
+        String sqlAnh = "SELECT id FROM se214.anh_tin WHERE phien_ban_tin_id = ? AND trang_thai = 'da_gan' ORDER BY thu_tu ASC";
+        return jdbcTemplate.query(sqlAnh, (rs, rowNum) -> rs.getObject("id", UUID.class), phienBanId);
+    }
 }

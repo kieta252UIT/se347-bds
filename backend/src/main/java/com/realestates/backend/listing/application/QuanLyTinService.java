@@ -21,6 +21,7 @@ import com.realestates.backend.listing.domain.TinDangRepository.DuLieuSuaTin;
 import com.realestates.backend.listing.domain.TinDangRepository.DuLieuXoaTin;
 import com.realestates.backend.listing.domain.TinDangRepository.KetQuaYeuCauGhi;
 import com.realestates.backend.listing.domain.TinDangRepository.LoiNghiepVuQuanLyTinException;
+import com.realestates.backend.listing.dto.TinCuaToiResponse;
 import com.realestates.backend.listing.dto.TinGhiKetQua;
 import com.realestates.backend.listing.exception.ListingConflictException;
 import com.realestates.backend.listing.exception.ListingNotFoundException;
@@ -78,6 +79,13 @@ public class QuanLyTinService {
         this.tinDangRepository = Objects.requireNonNull(tinDangRepository, "tinDangRepository không được null");
         this.banDoPort = Objects.requireNonNull(banDoPort, "banDoPort không được null");
         this.clock = Objects.requireNonNull(clock, "clock không được null");
+    }
+
+    public List<TinCuaToiResponse> layDanhSachTinCuaToi(String rawSessionCookie) {
+        PrincipalPhienHienTai nguoiDoc = permissionAndCsrfService.kiemTraPhienVaQuyenHienTai(rawSessionCookie);
+        return tinDangRepository.docDanhSachTinCuaChu(nguoiDoc.getTaiKhoanId()).stream()
+                .map(TinCuaToiResponse::fromDuLieu)
+                .toList();
     }
 
     public TinGhiKetQua suaTin(

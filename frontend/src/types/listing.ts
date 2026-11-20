@@ -35,6 +35,75 @@ export interface CreateListingPayload {
 }
 
 /**
+ * Payload sửa tin đăng gửi lên PUT /api/listings/{listingId}
+ * Gồm đúng 12 trường nội dung + trường phienBanDaXemId (UUID) theo QuanLyTinService
+ */
+export interface UpdateListingPayload extends CreateListingPayload {
+  phienBanDaXemId: string;
+}
+
+/**
+ * Các trạng thái tin đăng trong hệ thống (khớp với domain backend TinDangRepository)
+ */
+export type ListingStatus =
+  | "approved" // da_duyet
+  | "pending" // cho_kiem_duyet
+  | "rejected" // bi_tu_choi
+  | "violation" // bi_go_vi_pham
+  | "hidden" // an_tin
+  | "sold" // da_ban
+  | "deleted"; // da_xoa
+
+/**
+ * Cấu trúc thông tin một tin đăng trong danh sách quản lý "Tin của tôi"
+ */
+export interface MyListingItem {
+  id: string; // UUID hoặc id định danh
+  title: string;
+  price: string;
+  priceVnd?: number;
+  area: number;
+  address: string;
+  wardId?: number;
+  city?: string;
+  ward?: string;
+  date: string;
+  photos: number;
+  image: string;
+  status: ListingStatus;
+  rejectionReason?: string;
+  phienBanHienTaiId?: string; // UUID phiên bản hiện tại
+  phienBanCapNhat?: number; // Số phiên bản (phục vụ If-Match)
+  rawPayload?: Partial<CreateListingPayload>;
+}
+
+/**
+ * Cấu trúc dữ liệu tin trả về từ GET /api/me/listings
+ */
+export interface ServerListingResponse {
+  id: string;
+  tieuDe?: string;
+  moTa?: string;
+  loaiGiaoDich?: LoaiGiaoDichApi;
+  loaiBds?: LoaiBdsApi;
+  giaGoc?: string | number;
+  donViGia?: DonViGiaApi;
+  dienTichM2?: string | number;
+  diaChi?: string;
+  khuVuc?: string;
+  viDo?: string | number;
+  kinhDo?: string | number;
+  trangThai?: string;
+  lyDoTuChoi?: string;
+  phienBanHienTaiId?: string;
+  soPhienBan?: number;
+  phienBanCapNhat?: number;
+  ngayDang?: string;
+  anhIds?: string[];
+  anhDaiDienUrl?: string;
+}
+
+/**
  * Kết quả tạo tin đăng trả về từ backend (TinGhiKetQua)
  */
 export interface CreateListingResult {
