@@ -815,3 +815,660 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================
+   5. KDV MODERATION QUEUE & DETAIL VIEW
+   ========================================= */
+.kdv-filter-bar {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 8px rgba(15, 42, 34, 0.04);
+}
+
+.kdv-filter-search-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1.6;
+  min-width: 240px;
+}
+
+.kdv-filter-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.kdv-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.kdv-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 17px;
+  height: 17px;
+  color: #6d837a;
+  pointer-events: none;
+  transition: color 150ms ease;
+}
+
+.kdv-search-input-wrap:focus-within .kdv-search-icon {
+  color: #14775d;
+}
+
+.kdv-search-input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #d4e3dc;
+  border-radius: 10px;
+  padding: 0 12px 0 38px;
+  font-size: 0.86rem;
+  color: #112f27;
+  background-color: #ffffff;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  box-sizing: border-box;
+}
+
+.kdv-search-input::placeholder {
+  color: #899c93;
+}
+
+.kdv-search-input:hover {
+  border-color: #b7d1c6;
+}
+
+.kdv-search-input:focus {
+  border-color: #14775d;
+  box-shadow: 0 0 0 3px rgba(20, 119, 93, 0.12);
+}
+
+/* Custom Dropdown Filter matching HomePage style */
+.kdv-dropdown-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 165px;
+}
+
+.kdv-dropdown-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 42px;
+  border: 1px solid #d4e3dc;
+  border-radius: 10px;
+  background-color: #ffffff;
+  padding: 0 34px 0 13px;
+  color: #112f27;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+  box-sizing: border-box;
+}
+
+.kdv-dropdown-btn:hover {
+  border-color: #9ec5b5;
+  background-color: #fafdfb;
+}
+
+.kdv-dropdown-btn.active {
+  border-color: #14775d;
+  background-color: #f5faf7;
+  box-shadow: 0 0 0 3px rgba(20, 119, 93, 0.12);
+}
+
+.kdv-dropdown-btn-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  width: 100%;
+}
+
+.kdv-dropdown-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  margin-top: -8px;
+  width: 16px;
+  height: 16px;
+  color: #5e786e;
+  transition: transform 180ms ease, color 180ms ease;
+  pointer-events: none;
+}
+
+.kdv-dropdown-btn.active .kdv-dropdown-chevron {
+  transform: rotate(180deg);
+  color: #14775d;
+}
+
+.kdv-dropdown-menu {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  top: calc(100% + 8px);
+  min-width: 100%;
+  width: max-content;
+  max-width: 340px;
+  border: 1px solid #e6efe9;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 8px;
+  box-shadow: 0 18px 30px rgba(15, 42, 34, 0.13);
+  box-sizing: border-box;
+  animation: kdvMenuFadeIn 140ms ease-out;
+}
+
+.kdv-dropdown-menu.align-right {
+  left: auto;
+  right: 0;
+}
+
+@keyframes kdvMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kdv-dropdown-options {
+  display: grid;
+  max-height: 250px;
+  overflow-y: auto;
+  gap: 4px;
+}
+
+.kdv-dropdown-option {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 9px 12px;
+  color: #233e34;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.kdv-dropdown-option:hover,
+.kdv-dropdown-option.active {
+  background: #edf8f3;
+  color: #14775d;
+  font-weight: 700;
+}
+
+/* Date Range Dropdown Menu & Calendar */
+.kdv-date-menu {
+  width: 315px;
+  max-width: 92vw;
+  padding: 12px;
+}
+
+.kdv-date-inputs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.kdv-date-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.kdv-date-input-group span {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #60756d;
+}
+
+.kdv-date-input-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.kdv-date-input-box input {
+  width: 100%;
+  border: 1px solid #dce9e3;
+  border-radius: 8px;
+  outline: none;
+  background: #ffffff;
+  padding: 8px 28px 8px 9px;
+  color: #112f27;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  box-sizing: border-box;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.kdv-date-input-box input::placeholder {
+  color: #94a8a0;
+  font-weight: 400;
+}
+
+.kdv-date-input-box input:focus,
+.kdv-date-input-box.focused input {
+  border-color: #14775d;
+  box-shadow: 0 0 0 3px rgba(20, 119, 93, 0.11);
+}
+
+.kdv-date-cal-trigger {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: #5e786e;
+  cursor: pointer;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+}
+
+.kdv-date-cal-trigger:hover {
+  color: #14775d;
+  background: #edf8f3;
+}
+
+.kdv-calendar-widget {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e6efe9;
+}
+
+.kdv-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.kdv-cal-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #112f27;
+}
+
+.kdv-cal-nav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid #e6efe9;
+  background: #ffffff;
+  color: #233e34;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 140ms ease;
+}
+
+.kdv-cal-nav-btn:hover {
+  background: #edf8f3;
+  color: #14775d;
+  border-color: #b7d1c6;
+}
+
+.kdv-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #7c9288;
+  margin-bottom: 4px;
+}
+
+.kdv-cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.kdv-cal-day {
+  height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #233e34;
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.kdv-cal-day:hover:not(:disabled) {
+  background: #edf8f3;
+  color: #14775d;
+  font-weight: 700;
+}
+
+.kdv-cal-day.muted {
+  color: #cbd5e1;
+}
+
+.kdv-cal-day.in-range {
+  background: #edf8f3;
+  color: #0f3d32;
+  border-radius: 4px;
+}
+
+.kdv-cal-day.selected {
+  background: #14775d !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.kdv-date-menu-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f3;
+}
+
+/* Filter Action Buttons */
+.kdv-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.kdv-filter-action-btn {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 160ms ease;
+  white-space: nowrap;
+}
+
+.kdv-filter-action-btn.clear-btn {
+  background: #ffffff;
+  border: 1px solid #d4e3dc;
+  color: #334155;
+}
+
+.kdv-filter-action-btn.clear-btn:hover {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.kdv-filter-action-btn.refresh-btn {
+  background: #14775d;
+  border: 1px solid #14775d;
+  color: #ffffff;
+}
+
+.kdv-filter-action-btn.refresh-btn:hover {
+  background: #0f5f4a;
+  border-color: #0f5f4a;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(20, 119, 93, 0.2);
+}
+
+.kdv-filter-action-btn.refresh-btn:active {
+  transform: translateY(0);
+}
+
+.kdv-spin {
+  animation: kdvSpin 600ms linear infinite;
+}
+
+@keyframes kdvSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Full screen Detail Inspection View */
+.kdv-detail-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: kdvMenuFadeIn 180ms ease-out;
+}
+
+.kdv-detail-topbar {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.9rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+.kdv-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.5rem 1rem;
+  border-radius: 9px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.86rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.kdv-back-btn:hover {
+  background: #edf8f3;
+  border-color: #14775d;
+  color: #14775d;
+  transform: translateX(-2px);
+}
+
+.kdv-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(340px, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.kdv-detail-main-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.kdv-detail-side-col {
+  position: sticky;
+  top: 78px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.kdv-gallery-stage {
+  position: relative;
+  width: 100%;
+  height: 360px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+
+.kdv-gallery-stage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.kdv-gallery-counter {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #ffffff;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+
+.kdv-gallery-thumbs {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.kdv-gallery-thumb {
+  width: 82px;
+  height: 60px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  background: #f1f5f9;
+  flex-shrink: 0;
+  transition: all 140ms ease;
+}
+
+.kdv-gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.kdv-gallery-thumb.active {
+  border-color: #14775d;
+  box-shadow: 0 0 0 2px rgba(20, 119, 93, 0.2);
+}
+
+.kdv-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.kdv-info-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+}
+
+.kdv-info-box-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.kdv-info-box-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.kdv-info-box-value.highlight {
+  color: #14775d;
+  font-size: 1.1rem;
+}
+
+.kdv-preset-reason-btn {
+  width: 100%;
+  text-align: left;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.79rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 140ms ease;
+  line-height: 1.4;
+}
+
+.kdv-preset-reason-btn:hover,
+.kdv-preset-reason-btn.active {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .kdv-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .kdv-detail-side-col {
+    position: static;
+  }
+
+  .kdv-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .kdv-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
