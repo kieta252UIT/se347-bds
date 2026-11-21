@@ -18,8 +18,17 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!isAuthenticated) {
-    // Chuyển hướng về login và lưu lại vị trí trang hiện tại để redirect sau khi login thành công
-    return <Navigate to="/dang-nhap" state={{ from: location }} replace />;
+    const isStaffRoute =
+      location.pathname.startsWith("/admin") ||
+      location.pathname.startsWith("/kdv") ||
+      location.pathname.startsWith("/staff");
+    return (
+      <Navigate
+        to={isStaffRoute ? "/staff/login" : "/dang-nhap"}
+        state={{ from: location }}
+        replace
+      />
+    );
   }
 
   return children ? <>{children}</> : <Outlet />;

@@ -1,11 +1,21 @@
+import { useLocation, useNavigate } from "react-router";
+import {
+  UploadPropertyForm,
+  type UploadPropertyInitialData,
+} from "@/components/user/UploadPropertyForm";
+
 export function CreatePropertyPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const initialData =
+    (location.state as { initialData?: UploadPropertyInitialData } | null)
+      ?.initialData || null;
+
   return (
-    <div style={{ backgroundColor: "#ffffff", padding: "2rem", borderRadius: "0.5rem", border: "1px solid #e5e7eb" }}>
-      <h2>Đăng Tin Mới</h2>
-      <p style={{ color: "#6b7280" }}>
-        Form nhập thông tin BĐS bắt buộc, chọn tọa độ, upload 1–12 ảnh, kiểm hạn mức 3 tin/tháng.
-        (Khung placeholder sẵn sàng cho task nối UI ngày 18/11).
-      </p>
-    </div>
+    <UploadPropertyForm
+      initialData={initialData}
+      onCancel={() => navigate("/quan-ly-tin")}
+      onSubmitSuccess={() => navigate("/quan-ly-tin")}
+    />
   );
 }

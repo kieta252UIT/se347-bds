@@ -251,6 +251,12 @@ export function LoginPage({ onSwitchToRegister, onLogin }: LoginProps) {
                 Đăng ký ngay
               </button>
             </p>
+            <p style={{ marginTop: "0.55rem", fontSize: "0.82rem", color: "#64748b" }}>
+              Nhân sự vận hành?{" "}
+              <Link to="/staff/login" className="register-now-btn" style={{ fontWeight: 600 }}>
+                Cổng Kiểm duyệt & Quản trị
+              </Link>
+            </p>
           </div>
         </div>
       </section>

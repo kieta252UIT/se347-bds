@@ -24,6 +24,7 @@ import com.realestates.backend.config.AuthSessionCookieConfig;
 import com.realestates.backend.exception.GlobalApiExceptionHandler;
 import com.realestates.backend.listing.application.QuanLyTinService;
 import com.realestates.backend.listing.application.TinDangService;
+import com.realestates.backend.listing.controller.DanhSachTinCuaToiController;
 import com.realestates.backend.listing.controller.QuanLyTinController;
 import com.realestates.backend.listing.controller.TinDangController;
 import com.realestates.backend.listing.domain.AnhTinTruyCap;
@@ -87,7 +88,8 @@ class QuanLyTinApiTests {
         QuanLyTinService quanLyTinService = new QuanLyTinService(permissionAndCsrfService, tinDangRepository, banDo, dongHo);
         mockMvc = MockMvcBuilders.standaloneSetup(
                         new TinDangController(tinDangService, cookieConfig),
-                        new QuanLyTinController(quanLyTinService, cookieConfig)
+                        new QuanLyTinController(quanLyTinService, cookieConfig),
+                        new DanhSachTinCuaToiController(quanLyTinService, cookieConfig)
                 )
                 .setControllerAdvice(
                         new AuthSessionSecurityExceptionHandler(),
@@ -488,6 +490,26 @@ class QuanLyTinApiTests {
         );
         phienXacThucRepository.save(phien);
         return new Fixture(taiKhoan, rawSessionCookie);
+    }
+
+    @Test
+    @DisplayName("GET /api/me/listings: Trả về danh sách tin của người dùng đăng nhập")
+    void layDanhSachTinCuaToiThanhCong() throws Exception {
+        Fixture chu = taoNguoiDung(VaiTroTaiKhoan.NGUOI_DUNG);
+        TinDaTao tin = taoTinDaDuyet(chu, "tao-ds-1");
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/me/listings")
+                        .cookie(new Cookie(cookieConfig.getSessionCookieName(), chu.rawSessionCookie()))
+                        .header(HttpHeaders.ORIGIN, ORIGIN)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(tin.tinId().toString()))
+                .andExpect(jsonPath("$[0].tieuDe").value("Căn hộ 2 phòng ngủ view sông"))
+                .andExpect(jsonPath("$[0].trangThai").value("da_duyet"))
+                .andExpect(jsonPath("$[0].anhDaiDienUrl").isNotEmpty());
     }
 
     private static AuthSessionCookieConfig taoCookieConfig() {
