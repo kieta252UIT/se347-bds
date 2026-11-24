@@ -147,6 +147,15 @@ public class InMemoryKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort {
                 .toList();
     }
 
+    @Override
+    public boolean kiemTraTinHopLeCongKhai(UUID tinId, Instant now) {
+        if (tinId == null) {
+            return false;
+        }
+        return danhSachTin.stream()
+                .anyMatch(t -> t.tinId().equals(tinId) && t.hopLeCongKhaiBR01());
+    }
+
     private boolean thoaManTieuChi(ThongTinTinGoiY tin, TieuChiGoiY tieuChi) {
         if (tieuChi == null) {
             return true;

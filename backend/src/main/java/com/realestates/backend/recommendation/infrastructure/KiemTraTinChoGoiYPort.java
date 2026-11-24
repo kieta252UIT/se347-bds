@@ -47,4 +47,10 @@ public interface KiemTraTinChoGoiYPort {
      * và thỏa mãn tiêu chí lọc phục vụ khu vực Được tài trợ.
      */
     List<ThongTinTinGoiY> layDanhSachTinTaiTroHopLe(TieuChiGoiY tieuChi, Instant now);
+
+    /**
+     * Kiểm tra một tin bất động sản cụ thể có đang công khai hợp lệ theo quy tắc BR-01 hay không
+     * (tin.trang_thai = 'da_duyet' AND chu.trang_thai = 'hoat_dong').
+     */
+    boolean kiemTraTinHopLeCongKhai(UUID tinId, Instant now);
 }

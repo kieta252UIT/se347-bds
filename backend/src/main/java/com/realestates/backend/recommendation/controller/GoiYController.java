@@ -94,9 +94,12 @@ public class GoiYController {
         );
 
         boolean daGhiNhan = tuongTacApplicationService.ghiNhanTuongTac(sessionCookie, request);
-        return ResponseEntity.ok(Map.of(
-                "thanhCong", daGhiNhan,
-                "thongDiep", daGhiNhan ? "Đã ghi nhận tương tác" : "Khách xem tin công khai"
-        ));
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.VARY, HttpHeaders.COOKIE)
+                .body(Map.of(
+                        "thanhCong", daGhiNhan,
+                        "thongDiep", daGhiNhan ? "Đã ghi nhận tương tác" : "Khách xem tin công khai"
+                ));
     }
 }

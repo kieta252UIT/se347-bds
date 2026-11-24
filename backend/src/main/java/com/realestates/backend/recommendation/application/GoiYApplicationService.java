@@ -144,8 +144,7 @@ public class GoiYApplicationService {
 
         // Nếu là người dùng có danh tính: kiểm tra điểm nền
         if (taiKhoanId != null) {
-            Map<UUID, BigDecimal> mapDiemNen = diemGoiYRepository.findByTaiKhoanId(taiKhoanId).stream()
-                    .collect(Collectors.toMap(DiemGoiY::tinId, DiemGoiY::diem, (d1, d2) -> d1));
+            Map<UUID, BigDecimal> mapDiemNen = layMapDiemNen(taiKhoanId);
 
             if (!mapDiemNen.isEmpty()) {
                 // Có điểm nền: xếp hạng theo điểm nền giảm dần, khóa phụ là khoảng cách và độ mới
@@ -228,5 +227,18 @@ public class GoiYApplicationService {
                 tin.anhDaiDienId(),
                 duocTaiTro
         );
+    }
+
+    private Map<UUID, BigDecimal> layMapDiemNen(UUID taiKhoanId) {
+        if (taiKhoanId == null) {
+            return Collections.emptyMap();
+        }
+        try {
+            return diemGoiYRepository.findByTaiKhoanId(taiKhoanId).stream()
+                    .collect(Collectors.toMap(DiemGoiY::tinId, DiemGoiY::diem, (d1, d2) -> d1));
+        } catch (Exception e) {
+            // AC-03.3: Job nền lỗi hoặc sự cố điểm nền -> Fallback hợp lệ gần trước, mới sau
+            return Collections.emptyMap();
+        }
     }
 }
