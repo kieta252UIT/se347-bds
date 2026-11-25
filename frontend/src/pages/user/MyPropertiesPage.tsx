@@ -130,10 +130,12 @@ function TrashIcon() {
 
 function ListingCard({
   listing,
+  onView,
   onEdit,
   onRequestDelete,
 }: {
   listing: MyListingItem;
+  onView: (listing: MyListingItem) => void;
   onEdit: (listing: MyListingItem) => void;
   onRequestDelete: (listing: MyListingItem) => void;
 }) {
@@ -141,7 +143,20 @@ function ListingCard({
   const canDelete = listing.status !== "deleted" && listing.status !== "violation";
 
   return (
-    <article className="mp-listing-card">
+    <article
+      className="mp-listing-card"
+      onClick={() => onView(listing)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onView(listing);
+        }
+      }}
+      role="link"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+      title="Nhấn để xem thông tin chi tiết bất động sản"
+    >
       <div
         className="mp-listing-image"
         style={{ backgroundImage: `url("${listing.image}")` }}
@@ -171,13 +186,19 @@ function ListingCard({
         {statusLabels[listing.status] || listing.status}
       </span>
 
-      <div className="mp-listing-actions">
+      <div
+        className="mp-listing-actions"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Chỉ cho phép sửa tin khi đã duyệt hoặc bị từ chối (theo BR-02 / UC-07) */}
         {canEdit && (
           <button
             type="button"
             className="mp-action-btn edit-btn"
-            onClick={() => onEdit(listing)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(listing);
+            }}
             title={listing.status === "rejected" ? "Sửa & Nộp lại" : "Chỉnh sửa tin"}
             aria-label={listing.status === "rejected" ? "Sửa & Nộp lại" : "Chỉnh sửa tin"}
           >
@@ -188,7 +209,10 @@ function ListingCard({
           <button
             type="button"
             className="mp-action-btn delete-btn"
-            onClick={() => onRequestDelete(listing)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRequestDelete(listing);
+            }}
             title="Xóa tin đăng"
             aria-label="Xóa tin đăng"
           >
@@ -395,6 +419,11 @@ export function MyPropertiesPage() {
               <ListingCard
                 key={listing.id}
                 listing={listing}
+                onView={(item) => {
+                  navigate(`/tin-dang/${item.id}`, {
+                    state: { previewMyListing: item },
+                  });
+                }}
                 onEdit={(item) => {
                   navigate("/dang-tin", {
                     state: {

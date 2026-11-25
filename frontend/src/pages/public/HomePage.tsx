@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
+import { searchService } from "@/services/searchService";
+import type { LoaiBds } from "@/utils/priceFormatter";
 import locations from "@/data/locations.json";
 import "./home-page.css";
 
@@ -72,12 +74,12 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-const categories = [
-  ["01", "Căn hộ chung cư", "1.286 tin"],
-  ["02", "Nhà riêng", "1.674 tin"],
-  ["03", "Đất nền", "634 tin"],
-  ["04", "Phòng trọ", "1.234 tin"],
-  ["05", "Khác", "452 tin"],
+const categories: { number: string; name: string; apiType: LoaiBds }[] = [
+  { number: "01", name: "Căn hộ chung cư", apiType: "can_ho" },
+  { number: "02", name: "Nhà riêng", apiType: "nha_rieng" },
+  { number: "03", name: "Đất nền", apiType: "dat" },
+  { number: "04", name: "Phòng trọ", apiType: "phong_tro" },
+  { number: "05", name: "Khác", apiType: "khac" },
 ];
 
 const properties = [
@@ -114,24 +116,27 @@ const properties = [
 ];
 
 const cities = [
-  [
-    "TP. Hồ Chí Minh",
-    "2.450 bất động sản",
-    "https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=900&q=80",
-  ],
-  [
-    "Hà Nội",
-    "1.820 bất động sản",
-    "https://images.unsplash.com/photo-1689080541115-5acffbf0a083?q=80&w=686&auto=format&fit=crop",
-  ],
-  [
-    "Đà Nẵng",
-    "960 bất động sản",
-    "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=900&q=80",
-  ],
+  {
+    name: "TP. Hồ Chí Minh",
+    apiKhuVuc: "Hồ Chí Minh",
+    image:
+      "https://images.unsplash.com/photo-1583417319070-4a69db38a482?auto=format&fit=crop&w=900&q=80",
+  },
+  {
+    name: "Hà Nội",
+    apiKhuVuc: "Hà Nội",
+    image:
+      "https://images.unsplash.com/photo-1689080541115-5acffbf0a083?q=80&w=686&auto=format&fit=crop",
+  },
+  {
+    name: "Đà Nẵng",
+    apiKhuVuc: "Đà Nẵng",
+    image:
+      "https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?auto=format&fit=crop&w=900&q=80",
+  },
 ];
 
-const demandOptions = ["Tất cả", "Mua nhà", "Thuê nhà"];
+const demandOptions = ["Tất cả", "Mua bán", "Cho thuê"];
 const provinceOptions = ["Tất cả", ...locations.provinces.map(({ name }) => name)];
 const propertyTypeOptions = [
   "Tất cả",
@@ -141,19 +146,6 @@ const propertyTypeOptions = [
   "Phòng trọ",
   "Khác",
 ];
-
-const formatPrice = (vnd: number) => {
-  for (const [unit, label] of [
-    [1_000_000_000, "tỷ"],
-    [1_000_000, "triệu"],
-  ] as const) {
-    const scaled = vnd / unit;
-    if (scaled >= 1 && Number.isInteger(scaled * 100)) {
-      return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(scaled)} ${label} VNĐ`;
-    }
-  }
-  return `${vnd.toLocaleString("vi-VN")} VNĐ`;
-};
 
 const formatProvinceLabel = (province: string) =>
   province.replace(/^Thành phố /, "TP. ").replace(/^Tỉnh /, "");
@@ -179,14 +171,14 @@ export function HomePage() {
   const { isAuthenticated } = useAuth();
   const [liked, setLiked] = useState<number[]>([]);
   const [activeFilter, setActiveFilter] = useState<
-    "demand" | "province" | "propertyType" | "price" | null
+    "demand" | "province" | "propertyType" | null
   >(null);
   const [selectedDemand, setSelectedDemand] = useState("Tất cả");
   const [selectedProvince, setSelectedProvince] = useState("Tất cả");
   const [provinceSearchText, setProvinceSearchText] = useState("");
   const [selectedPropertyType, setSelectedPropertyType] = useState(propertyTypeOptions[0]);
-  const [minPrice, setMinPrice] = useState("0");
-  const [maxPrice, setMaxPrice] = useState("100000000000");
+  const [categoryCounts, setCategoryCounts] = useState<Partial<Record<LoaiBds, number>>>({});
+  const [cityCounts, setCityCounts] = useState<Record<string, number>>({});
 
   const filterCardRef = useRef<HTMLElement>(null);
 
@@ -205,19 +197,62 @@ export function HomePage() {
 
   const handleSearch = () => {
     const params = new URLSearchParams({
-      transaction:
-        selectedDemand === "Tất cả"
-          ? "Tất cả"
-          : selectedDemand === "Thuê nhà"
-          ? "Cho thuê"
-          : "Mua bán",
+      transaction: selectedDemand,
       city: selectedProvince,
-      propertyType: selectedPropertyType === "Tất cả" ? "Tất cả" : selectedPropertyType,
-      priceMin: minPrice,
-      priceMax: maxPrice,
+      propertyType:
+        selectedPropertyType === "Tất cả" ? "Tất cả" : selectedPropertyType,
     });
+
     navigate(`/tim-kiem?${params.toString()}`);
   };
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    Promise.all(
+      categories.map(async (cat) => {
+        const res = await searchService.searchListings(
+          { loaiBds: cat.apiType, trang: 0, kichThuoc: 1 },
+          controller.signal
+        );
+        return [cat.apiType, res.tuNhien.tongSo] as const;
+      })
+    )
+      .then((entries) => {
+        if (controller.signal.aborted) return;
+        const nextCounts: Partial<Record<LoaiBds, number>> = {};
+        for (const [apiType, total] of entries) {
+          nextCounts[apiType] = total;
+        }
+        setCategoryCounts(nextCounts);
+      })
+      .catch(() => {
+        // Giữ nguyên khi hủy request hoặc lỗi mạng
+      });
+
+    Promise.all(
+      cities.map(async (city) => {
+        const res = await searchService.searchListings(
+          { khuVuc: city.apiKhuVuc, trang: 0, kichThuoc: 1 },
+          controller.signal
+        );
+        return [city.name, res.tuNhien.tongSo] as const;
+      })
+    )
+      .then((entries) => {
+        if (controller.signal.aborted) return;
+        const nextCityCounts: Record<string, number> = {};
+        for (const [cityName, total] of entries) {
+          nextCityCounts[cityName] = total;
+        }
+        setCityCounts(nextCityCounts);
+      })
+      .catch(() => {
+        // Giữ nguyên khi hủy request hoặc lỗi mạng
+      });
+
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!activeFilter) return;
@@ -243,12 +278,6 @@ export function HomePage() {
       label: "Loại bất động sản",
       value: selectedPropertyType,
       options: propertyTypeOptions,
-    },
-    {
-      key: "price",
-      label: "Khoảng giá",
-      value: `${formatPrice(Number(minPrice) || 0)} - ${formatPrice(Number(maxPrice) || 0)}`,
-      options: [],
     },
   ] as const;
 
@@ -294,115 +323,78 @@ export function HomePage() {
 
               {activeFilter === filter.key && (
                 <div className="home-filter-menu" role="group" aria-label={filter.label}>
-                  {filter.key === "price" ? (
-                    <div className="home-price-input-wrap">
-                      <label className="home-price-input-control">
-                        <span>Từ (VNĐ)</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={minPrice}
-                          onChange={(event) => {
-                            const digits = event.target.value.replace(/\D/g, "");
-                            const amount = Math.min(Number(digits) || 0, 100000000000);
-                            setMinPrice(String(Math.min(amount, Number(maxPrice) || 0)));
-                          }}
-                          aria-label="Giá thấp nhất, đơn vị VNĐ"
-                        />
-                      </label>
-                      <label className="home-price-input-control">
-                        <span>Đến (VNĐ)</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={maxPrice}
-                          onChange={(event) => {
-                            const digits = event.target.value.replace(/\D/g, "");
-                            const amount = Math.min(Number(digits) || 0, 100000000000);
-                            setMaxPrice(String(Math.max(amount, Number(minPrice) || 0)));
-                          }}
-                          aria-label="Giá cao nhất, đơn vị VNĐ"
-                        />
-                      </label>
+                  {filter.key === "province" && (
+                    <div
+                      className="home-filter-search-box"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <input
+                        type="text"
+                        placeholder="Tìm tỉnh, thành phố..."
+                        value={provinceSearchText}
+                        onChange={(event) => setProvinceSearchText(event.target.value)}
+                        className="home-filter-search-input"
+                        aria-label="Tìm kiếm tỉnh, thành phố"
+                        autoFocus
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            if (filteredProvinceOptions.length > 0) {
+                              const match =
+                                filteredProvinceOptions.find((o) => o !== "Tất cả") ||
+                                filteredProvinceOptions[0];
+                              setSelectedProvince(match);
+                              setProvinceSearchText("");
+                              setActiveFilter(null);
+                            }
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="home-filter-search-btn"
+                        aria-label="Tìm kiếm"
+                        tabIndex={-1}
+                      >
+                        <Icon name="search" />
+                      </button>
                     </div>
-                  ) : (
-                    <>
-                      {filter.key === "province" && (
-                        <div
-                          className="home-filter-search-box"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <input
-                            type="text"
-                            placeholder="Tìm tỉnh, thành phố..."
-                            value={provinceSearchText}
-                            onChange={(event) => setProvinceSearchText(event.target.value)}
-                            className="home-filter-search-input"
-                            aria-label="Tìm kiếm tỉnh, thành phố"
-                            autoFocus
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.preventDefault();
-                                if (filteredProvinceOptions.length > 0) {
-                                  const match =
-                                    filteredProvinceOptions.find((o) => o !== "Tất cả") ||
-                                    filteredProvinceOptions[0];
-                                  setSelectedProvince(match);
-                                  setProvinceSearchText("");
-                                  setActiveFilter(null);
-                                }
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="home-filter-search-btn"
-                            aria-label="Tìm kiếm"
-                            tabIndex={-1}
-                          >
-                            <Icon name="search" />
-                          </button>
-                        </div>
-                      )}
-                      <div className="home-filter-options">
-                        {(filter.key === "province" ? filteredProvinceOptions : filter.options).map(
-                          (option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              className={`home-filter-option ${
-                                (filter.key === "demand" && option === selectedDemand) ||
-                                (filter.key === "province" && option === selectedProvince) ||
-                                (filter.key === "propertyType" &&
-                                  option === selectedPropertyType)
-                                  ? "active"
-                                  : ""
-                              }`}
-                              onClick={() => {
-                                if (filter.key === "demand") setSelectedDemand(option);
-                                if (filter.key === "province") {
-                                  setSelectedProvince(option);
-                                  setProvinceSearchText("");
-                                }
-                                if (filter.key === "propertyType")
-                                  setSelectedPropertyType(option);
-                                setActiveFilter(null);
-                              }}
-                            >
-                              {option}
-                            </button>
-                          )
-                        )}
-                        {filter.key === "province" && filteredProvinceOptions.length === 0 && (
-                          <div className="home-filter-empty">
-                            Không tìm thấy tỉnh / thành phố phù hợp
-                          </div>
-                        )}
-                      </div>
-                    </>
                   )}
+                  <div className="home-filter-options">
+                    {(filter.key === "province" ? filteredProvinceOptions : filter.options).map(
+                      (option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className={`home-filter-option ${
+                            (filter.key === "demand" && option === selectedDemand) ||
+                            (filter.key === "province" && option === selectedProvince) ||
+                            (filter.key === "propertyType" &&
+                              option === selectedPropertyType)
+                              ? "active"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            if (filter.key === "demand") setSelectedDemand(option);
+                            if (filter.key === "province") {
+                              setSelectedProvince(option);
+                              setProvinceSearchText("");
+                            }
+                            if (filter.key === "propertyType")
+                              setSelectedPropertyType(option);
+                            setActiveFilter(null);
+                          }}
+                        >
+                          {option}
+                        </button>
+                      )
+                    )}
+                    {filter.key === "province" && filteredProvinceOptions.length === 0 && (
+                      <div className="home-filter-empty">
+                        Không tìm thấy tỉnh / thành phố phù hợp
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -424,20 +416,27 @@ export function HomePage() {
         <p className="home-eyebrow">Khám phá</p>
         <h2>Bạn đang tìm kiếm điều gì?</h2>
         <div className="home-category-grid">
-          {categories.map(([number, name, count]) => (
-            <Link
-              to={`/tim-kiem?propertyType=${encodeURIComponent(name)}`}
-              className="home-category"
-              key={name}
-            >
-              <small>{number}</small>
-              <div>
-                <strong>{name}</strong>
-                <span>{count}</span>
-              </div>
-              <Icon name="arrow" />
-            </Link>
-          ))}
+          {categories.map(({ number, name, apiType }) => {
+            const countValue = categoryCounts[apiType];
+            const countLabel =
+              countValue !== undefined
+                ? `${countValue.toLocaleString("vi-VN")} tin`
+                : "Đang cập nhật";
+            return (
+              <Link
+                to={`/tim-kiem?propertyType=${encodeURIComponent(name)}`}
+                className="home-category"
+                key={name}
+              >
+                <small>{number}</small>
+                <div>
+                  <strong>{name}</strong>
+                  <span>{countLabel}</span>
+                </div>
+                <Icon name="arrow" />
+              </Link>
+            );
+          })}
         </div>
       </section>
 
@@ -502,18 +501,23 @@ export function HomePage() {
           </div>
         </div>
         <div className="home-city-grid">
-          {cities.map(([city, count, image]) => {
+          {cities.map(({ name: city, image }) => {
             const province = locations.provinces.find(
               ({ name }) => normalizeProvinceName(name) === normalizeProvinceName(city)
             );
             const searchHref = province
               ? `/tim-kiem?city=${encodeURIComponent(province.name)}`
               : "/tim-kiem";
+            const countVal = cityCounts[city];
+            const countLabel =
+              countVal !== undefined
+                ? `${countVal.toLocaleString("vi-VN")} bất động sản`
+                : "Đang cập nhật";
             return (
               <Link to={searchHref} className="home-city" key={city}>
                 <div style={{ backgroundImage: `url("${image}")` }} />
                 <strong>{city}</strong>
-                <span>{count}</span>
+                <span>{countLabel}</span>
                 <Icon name="arrow" />
               </Link>
             );

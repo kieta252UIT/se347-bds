@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import locations from "@/data/locations.json";
-import { PropertyCard } from "@/components/property/PropertyCard";
-import { mockProperties } from "@/data/mockProperties";
+import { PropertyCard, type PropertyItem } from "@/components/property/PropertyCard";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  mapTinTomTatToPropertyItem,
+  searchService,
+} from "@/services/searchService";
+import { favoriteService } from "@/services/favoriteService";
+import type {
+  CheDoGia,
+  SapXepTimKiem,
+  SearchQueryParams,
+} from "@/types/search";
+import type { LoaiBds, LoaiGiaoDich } from "@/utils/priceFormatter";
 import "./search-page.css";
 
 type IconName =
@@ -24,22 +35,36 @@ type Filters = {
   city: string;
   ward: string;
   propertyType: string;
+  priceMode: CheDoGia;
   priceMin: string;
   priceMax: string;
   area: string;
-  bedrooms: string;
-  bathrooms: string;
 };
 
-type FilterKey = Exclude<keyof Filters, "priceMin" | "priceMax"> | "price";
-type SortOrder = "newest" | "oldest" | "price-asc" | "price-desc";
+type FilterKey =
+  | "transaction"
+  | "city"
+  | "ward"
+  | "propertyType"
+  | "price"
+  | "area";
 
 type SearchQuery = {
   transaction?: string;
   city?: string;
   propertyType?: string;
+  priceMode?: string;
   priceMin?: string;
   priceMax?: string;
+  tuKhoa?: string;
+};
+
+type MapBounds = {
+  nam: number;
+  bac: number;
+  tay: number;
+  dong: number;
+  label: string;
 };
 
 function Icon({ name }: { name: IconName }) {
@@ -117,20 +142,15 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-const properties = mockProperties;
-
-const sponsoredPropertyIds = new Set([1, 3, 6, 9]);
-
 const initialFilters: Filters = {
   transaction: "Tất cả",
   city: "Tất cả",
   ward: "Tất cả",
   propertyType: "Tất cả",
-  priceMin: "0",
-  priceMax: "100000000000",
+  priceMode: "tong",
+  priceMin: "",
+  priceMax: "",
   area: "Tất cả",
-  bedrooms: "Tất cả",
-  bathrooms: "Tất cả",
 };
 
 const transactionOptions = ["Tất cả", "Mua bán", "Cho thuê"];
@@ -142,68 +162,184 @@ const propertyTypeOptions = [
   "Phòng trọ",
   "Khác",
 ];
-const areaOptions = ["Tất cả", "Dưới 50 m²", "50 – 80 m²", "80 – 120 m²", "Trên 120 m²"];
-const bedroomOptions = ["Tất cả", "1 phòng ngủ", "2 phòng ngủ", "3 phòng ngủ", "4+ phòng ngủ"];
-const bathroomOptions = ["Tất cả", "1 phòng tắm", "2 phòng tắm", "3 phòng tắm", "4+ phòng tắm"];
+const areaOptions = [
+  "Tất cả",
+  "Dưới 50 m²",
+  "50 – 80 m²",
+  "80 – 120 m²",
+  "Trên 120 m²",
+];
 const maxPrice = 100_000_000_000;
 
-const formatFilterPrice = (vnd: number) => {
+/**
+ * Hai chế độ sắp xếp hợp lệ trong Sprint 1 theo TK-08 & openapi-sprint-1.yaml
+ */
+const sortOptions: { value: SapXepTimKiem; label: string }[] = [
+  { value: "mac_dinh", label: "Phù hợp nhất" },
+  { value: "moi_nhat", label: "Mới nhất" },
+];
+
+const MAP_BOUNDS_PRESETS: MapBounds[] = [
+  {
+    label: "Khu vực TP. Hồ Chí Minh",
+    nam: 10.65,
+    bac: 10.92,
+    tay: 106.58,
+    dong: 106.88,
+  },
+  {
+    label: "Khu vực Hà Nội",
+    nam: 20.95,
+    bac: 21.12,
+    tay: 105.72,
+    dong: 105.92,
+  },
+  {
+    label: "Khu vực Đà Nẵng",
+    nam: 15.98,
+    bac: 16.12,
+    tay: 108.15,
+    dong: 108.28,
+  },
+];
+
+const formatFilterPrice = (vnd: number, mode: CheDoGia = "tong") => {
+  const suffix = mode === "m2" ? "/m²" : "";
   for (const [unit, label] of [
     [1_000_000_000, "tỷ"],
     [1_000_000, "triệu"],
   ] as const) {
     const scaled = vnd / unit;
     if (scaled >= 1 && Number.isInteger(scaled * 100)) {
-      return `${new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 }).format(scaled)} ${label} VNĐ`;
+      return `${new Intl.NumberFormat("vi-VN", {
+        maximumFractionDigits: 2,
+      }).format(scaled)} ${label}${suffix}`;
     }
   }
-  return `${vnd.toLocaleString("vi-VN")} VNĐ`;
+  return `${vnd.toLocaleString("vi-VN")} VNĐ${suffix}`;
 };
+
+function formatPriceRangeLabel(
+  priceMin: string,
+  priceMax: string,
+  priceMode: CheDoGia
+): string {
+  const hasMin = Boolean(priceMin.trim());
+  const hasMax = Boolean(priceMax.trim());
+  if (!hasMin && !hasMax) {
+    return priceMode === "m2" ? "Tất cả (theo m²)" : "Tất cả mức giá";
+  }
+  const minVal = Number(priceMin) || 0;
+  const maxVal = Number(priceMax) || 0;
+  if (hasMin && hasMax) {
+    return `${formatFilterPrice(minVal, priceMode)} - ${formatFilterPrice(
+      maxVal,
+      priceMode
+    )}`;
+  }
+  if (hasMin) {
+    return `Từ ${formatFilterPrice(minVal, priceMode)}`;
+  }
+  return `Đến ${formatFilterPrice(maxVal, priceMode)}`;
+}
 
 function getInitialFilters(query?: SearchQuery): Filters {
   if (!query || !Object.values(query).some(Boolean)) return initialFilters;
 
-  const requestedMin = query.priceMin === undefined ? 0 : Number(query.priceMin);
-  const requestedMax = query.priceMax === undefined ? maxPrice : Number(query.priceMax);
+  const transaction =
+    query.transaction && transactionOptions.includes(query.transaction)
+      ? query.transaction
+      : "Tất cả";
+
   const requestedCity = query.city;
-  const priceMin = Math.min(Math.max(requestedMin || 0, 0), maxPrice);
-  const priceMax = Math.min(Math.max(requestedMax || 0, priceMin), maxPrice);
+  const city =
+    requestedCity &&
+    (requestedCity === "Tất cả" ||
+      locations.provinces.some(({ name }) => name === requestedCity))
+      ? requestedCity
+      : "Tất cả";
+
+  const propertyType =
+    query.propertyType && propertyTypeOptions.includes(query.propertyType)
+      ? query.propertyType
+      : "Tất cả";
+
+  const priceMode: CheDoGia = query.priceMode === "m2" ? "m2" : "tong";
+
+  // TK-03: Chỉ nhận cận giá khi đã chọn loại giao dịch
+  let priceMin = "";
+  let priceMax = "";
+  if (transaction !== "Tất cả") {
+    const rawMin = query.priceMin ? Number(query.priceMin) : NaN;
+    const rawMax = query.priceMax ? Number(query.priceMax) : NaN;
+    const hasCustomRange =
+      (!Number.isNaN(rawMin) && rawMin > 0) ||
+      (!Number.isNaN(rawMax) && rawMax > 0 && rawMax < maxPrice);
+
+    if (hasCustomRange) {
+      if (!Number.isNaN(rawMin) && rawMin > 0) {
+        priceMin = String(Math.min(Math.max(rawMin, 0), maxPrice));
+      }
+      if (!Number.isNaN(rawMax) && rawMax > 0) {
+        priceMax = String(Math.min(Math.max(rawMax, 0), maxPrice));
+      }
+    }
+  }
 
   return {
     ...initialFilters,
-    transaction:
-      query.transaction && transactionOptions.includes(query.transaction)
-        ? query.transaction
-        : "Tất cả",
-    city:
-      requestedCity &&
-      (requestedCity === "Tất cả" ||
-        locations.provinces.some(({ name }) => name === requestedCity))
-        ? requestedCity
-        : "Tất cả",
-    propertyType:
-      query.propertyType && propertyTypeOptions.includes(query.propertyType)
-        ? query.propertyType
-        : "Tất cả",
+    transaction,
+    city,
     ward: "Tất cả",
-    priceMin: String(priceMin),
-    priceMax: String(priceMax),
+    propertyType,
+    priceMode,
+    priceMin,
+    priceMax,
   };
 }
 
-const sortOptions: { value: SortOrder; label: string }[] = [
-  { value: "newest", label: "Mới nhất" },
-  { value: "oldest", label: "Cũ nhất" },
-  { value: "price-asc", label: "Giá tăng dần" },
-  { value: "price-desc", label: "Giá giảm dần" },
-];
+function mapTransactionToApi(transaction: string): LoaiGiaoDich | undefined {
+  if (transaction === "Mua bán") return "ban";
+  if (transaction === "Cho thuê") return "cho_thue";
+  return undefined;
+}
 
-function matchesArea(value: number, range: string) {
-  if (range === "Tất cả") return true;
-  if (range === "Dưới 50 m²") return value < 50;
-  if (range === "50 – 80 m²") return value >= 50 && value <= 80;
-  if (range === "80 – 120 m²") return value > 80 && value <= 120;
-  return value > 120;
+function mapPropertyTypeToApi(propertyType: string): LoaiBds | undefined {
+  switch (propertyType) {
+    case "Căn hộ chung cư":
+      return "can_ho";
+    case "Nhà riêng":
+      return "nha_rieng";
+    case "Đất nền":
+      return "dat";
+    case "Phòng trọ":
+      return "phong_tro";
+    case "Khác":
+      return "khac";
+    default:
+      return undefined;
+  }
+}
+
+function mapAreaToApi(area: string): {
+  dienTichMin?: string;
+  dienTichMax?: string;
+} {
+  if (area === "Dưới 50 m²") return { dienTichMax: "50" };
+  if (area === "50 – 80 m²") return { dienTichMin: "50", dienTichMax: "80" };
+  if (area === "80 – 120 m²") return { dienTichMin: "80", dienTichMax: "120" };
+  if (area === "Trên 120 m²") return { dienTichMin: "120" };
+  return {};
+}
+
+function mapKhuVucToApi(city: string, ward: string): string | undefined {
+  if (ward !== "Tất cả") {
+    return ward;
+  }
+  if (city !== "Tất cả") {
+    return city.replace(/^(Thành phố|Tỉnh)\s+/i, "").trim();
+  }
+  return undefined;
 }
 
 function normalizeVietnamese(text: string): string {
@@ -218,14 +354,18 @@ function normalizeVietnamese(text: string): string {
 
 export function SearchPage() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
 
   const initialQueryFromUrl = useMemo<SearchQuery>(
     () => ({
       transaction: searchParams.get("transaction") || undefined,
       city: searchParams.get("city") || undefined,
       propertyType: searchParams.get("propertyType") || undefined,
+      priceMode: searchParams.get("cheDoGia") || undefined,
       priceMin: searchParams.get("priceMin") || undefined,
       priceMax: searchParams.get("priceMax") || undefined,
+      tuKhoa: searchParams.get("tuKhoa") || undefined,
     }),
     [searchParams]
   );
@@ -236,22 +376,123 @@ export function SearchPage() {
   const [appliedFilters, setAppliedFilters] = useState(() =>
     getInitialFilters(initialQueryFromUrl)
   );
-  const [searchText, setSearchText] = useState("");
-  const [appliedSearchText, setAppliedSearchText] = useState("");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
+  const [searchText, setSearchText] = useState(
+    () => initialQueryFromUrl.tuKhoa || ""
+  );
+  const [appliedSearchText, setAppliedSearchText] = useState(
+    () => initialQueryFromUrl.tuKhoa || ""
+  );
+  const [sortOrder, setSortOrder] = useState<SapXepTimKiem>("mac_dinh");
   const [sortOpen, setSortOpen] = useState(false);
-  const [favorites, setFavorites] = useState<number[]>([]);
+  const [favorites, setFavorites] = useState<(string | number)[]>([]);
   const [sponsoredPage, setSponsoredPage] = useState(0);
   const [page, setPage] = useState(1);
   const [mapView, setMapView] = useState(false);
+  const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [activeFilter, setActiveFilter] = useState<FilterKey | null>(null);
   const [citySearchText, setCitySearchText] = useState("");
   const [wardSearchText, setWardSearchText] = useState("");
 
+  // State kết quả từ API GET /api/listings
+  const [apiSponsored, setApiSponsored] = useState<PropertyItem[]>([]);
+  const [apiRegular, setApiRegular] = useState<PropertyItem[]>([]);
+  const [apiTotalRegular, setApiTotalRegular] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [apiError, setApiError] = useState<string | null>(null);
+
   const filterPanelRef = useRef<HTMLElement>(null);
   const sortControlRef = useRef<HTMLDivElement>(null);
   const sponsoredViewportRef = useRef<HTMLDivElement>(null);
+  const requestSeqRef = useRef<number>(0);
+
+  const pageSize = 8;
+
+  // Đồng bộ danh sách yêu thích từ GET /api/me/favorites khi đã đăng nhập
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let active = true;
+    favoriteService
+      .getFavorites(0, 50)
+      .then((res) => {
+        if (!active) return;
+        const ids = res.noiDung.map((item) => item.id);
+        setFavorites((prev) => {
+          const demoNumeric = prev.filter((id) => typeof id === "number");
+          return [...demoNumeric, ...ids];
+        });
+      })
+      .catch(() => {
+        // Bỏ qua nếu chưa có dữ liệu hoặc lỗi mạng
+      });
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated]);
+
+  // Gọi API GET /api/listings với AbortController & requestSeqRef (TK-11)
+  useEffect(() => {
+    const controller = new AbortController();
+    const currentSeq = ++requestSeqRef.current;
+
+    const areaBounds = mapAreaToApi(appliedFilters.area);
+    const loaiGiaoDich = mapTransactionToApi(appliedFilters.transaction);
+
+    const queryParams: SearchQueryParams = {
+      tuKhoa: appliedSearchText.trim() || undefined,
+      loaiGiaoDich,
+      loaiBds: mapPropertyTypeToApi(appliedFilters.propertyType),
+      khuVuc: mapKhuVucToApi(appliedFilters.city, appliedFilters.ward),
+      cheDoGia: loaiGiaoDich ? appliedFilters.priceMode : undefined,
+      giaMin: loaiGiaoDich ? appliedFilters.priceMin || undefined : undefined,
+      giaMax: loaiGiaoDich ? appliedFilters.priceMax || undefined : undefined,
+      dienTichMin: areaBounds.dienTichMin,
+      dienTichMax: areaBounds.dienTichMax,
+      nam: mapBounds?.nam,
+      bac: mapBounds?.bac,
+      tay: mapBounds?.tay,
+      dong: mapBounds?.dong,
+      sapXep: sortOrder,
+      trang: Math.max(0, page - 1),
+      kichThuoc: pageSize,
+    };
+
+    setIsLoading(true);
+    setApiError(null);
+
+    searchService
+      .searchListings(queryParams, controller.signal)
+      .then((data) => {
+        if (currentSeq !== requestSeqRef.current) return;
+        setApiSponsored(data.taiTro.map(mapTinTomTatToPropertyItem));
+        setApiRegular(data.tuNhien.noiDung.map(mapTinTomTatToPropertyItem));
+        setApiTotalRegular(data.tuNhien.tongSo);
+        setIsLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted || currentSeq !== requestSeqRef.current) {
+          return;
+        }
+        const message = (
+          err as { response?: { data?: { message?: string } } }
+        )?.response?.data?.message;
+
+        setApiError(
+          message || "Không thể tải kết quả tìm kiếm từ máy chủ. Vui lòng thử lại."
+        );
+        setIsLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [
+    appliedFilters,
+    appliedSearchText,
+    sortOrder,
+    page,
+    mapBounds,
+  ]);
 
   const selectedProvince = locations.provinces.find(
     (province) => province.name === draftFilters.city
@@ -302,7 +543,10 @@ export function SearchPage() {
       return;
     }
     const wardObj = locations.wards.find((w) => w.name === wardName);
-    if (wardObj && (!selectedProvince || selectedProvince.id !== wardObj.province_id)) {
+    if (
+      wardObj &&
+      (!selectedProvince || selectedProvince.id !== wardObj.province_id)
+    ) {
       const prov = locations.provinces.find((p) => p.id === wardObj.province_id);
       if (prov) {
         setDraftFilters((current) => ({
@@ -351,93 +595,35 @@ export function SearchPage() {
     },
     {
       key: "price",
-      label: "Khoảng giá",
-      value: `${formatFilterPrice(Number(draftFilters.priceMin) || 0)} - ${formatFilterPrice(
-        Number(draftFilters.priceMax) || 0
-      )}`,
+      label:
+        draftFilters.priceMode === "m2"
+          ? "Khoảng giá (Đơn giá / m²)"
+          : "Khoảng giá (Tổng giá)",
+      value: formatPriceRangeLabel(
+        draftFilters.priceMin,
+        draftFilters.priceMax,
+        draftFilters.priceMode
+      ),
       options: [],
     },
-    { key: "area", label: "Diện tích", value: draftFilters.area, options: areaOptions },
     {
-      key: "bedrooms",
-      label: "Số phòng ngủ",
-      value: draftFilters.bedrooms,
-      options: bedroomOptions,
-    },
-    {
-      key: "bathrooms",
-      label: "Số phòng tắm",
-      value: draftFilters.bathrooms,
-      options: bathroomOptions,
+      key: "area",
+      label: "Diện tích",
+      value: draftFilters.area,
+      options: areaOptions,
     },
   ];
 
-  const filteredProperties = useMemo(() => {
-    const query = appliedSearchText.trim().toLocaleLowerCase("vi");
-    const filtered = properties.filter((property) => {
-      const matchesTransaction =
-        appliedFilters.transaction === "Tất cả" ||
-        property.transaction === appliedFilters.transaction;
-      const matchesCity =
-        appliedFilters.city === "Tất cả" || property.city === appliedFilters.city;
-      const matchesWard =
-        appliedFilters.ward === "Tất cả" || property.ward === appliedFilters.ward;
-      const matchesType =
-        appliedFilters.propertyType === "Tất cả" ||
-        property.type === appliedFilters.propertyType;
-      const matchesBedrooms =
-        appliedFilters.bedrooms === "Tất cả" ||
-        property.beds === Number.parseInt(appliedFilters.bedrooms, 10) ||
-        (appliedFilters.bedrooms === "4+ phòng ngủ" && property.beds >= 4);
-      const matchesBathrooms =
-        appliedFilters.bathrooms === "Tất cả" ||
-        property.baths === Number.parseInt(appliedFilters.bathrooms, 10) ||
-        (appliedFilters.bathrooms === "4+ phòng tắm" && property.baths >= 4);
-      const minPriceFilter = Number(appliedFilters.priceMin) || 0;
-      const maxPriceFilter = Number(appliedFilters.priceMax) || maxPrice;
-      const matchesQuery =
-        !query ||
-        `${property.title} ${property.place} ${property.type}`
-          .toLocaleLowerCase("vi")
-          .includes(query);
+  const sponsoredProperties: PropertyItem[] = apiSponsored.slice(0, 5);
+  const regularTotalCount: number = apiTotalRegular;
+  const visibleProperties: PropertyItem[] = apiRegular;
 
-      return (
-        matchesTransaction &&
-        matchesCity &&
-        matchesWard &&
-        matchesType &&
-        property.priceValue >= minPriceFilter &&
-        property.priceValue <= maxPriceFilter &&
-        matchesArea(property.size, appliedFilters.area) &&
-        matchesBedrooms &&
-        matchesBathrooms &&
-        matchesQuery
-      );
-    });
-
-    return sortOrder === "price-asc"
-      ? [...filtered].sort((a, b) => a.priceValue - b.priceValue)
-      : sortOrder === "price-desc"
-      ? [...filtered].sort((a, b) => b.priceValue - a.priceValue)
-      : sortOrder === "oldest"
-      ? [...filtered].sort((a, b) => b.id - a.id)
-      : [...filtered].sort((a, b) => a.id - b.id);
-  }, [appliedFilters, appliedSearchText, sortOrder]);
-
-  const pageSize = 8;
-  const sponsoredProperties = filteredProperties.filter((property) =>
-    sponsoredPropertyIds.has(property.id)
-  );
-  const regularProperties = filteredProperties.filter(
-    (property) => !sponsoredPropertyIds.has(property.id)
-  );
   const sponsoredPageSize = 2;
-  const sponsoredLastPage = Math.max(0, sponsoredProperties.length - sponsoredPageSize);
-  const pageCount = Math.max(1, Math.ceil(regularProperties.length / pageSize));
-  const visibleProperties = regularProperties.slice(
-    (page - 1) * pageSize,
-    page * pageSize
+  const sponsoredLastPage = Math.max(
+    0,
+    sponsoredProperties.length - sponsoredPageSize
   );
+  const pageCount = Math.max(1, Math.ceil(regularTotalCount / pageSize));
 
   useEffect(() => {
     const target = sponsoredViewportRef.current?.children[sponsoredPage] as
@@ -461,7 +647,8 @@ export function SearchPage() {
     };
 
     document.addEventListener("pointerdown", closeOnOutsideClick);
-    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
   }, [activeFilter, sortOpen]);
 
   const applySearch = (event: FormEvent<HTMLFormElement>) => {
@@ -473,40 +660,69 @@ export function SearchPage() {
   };
 
   const clearFilters = () => {
-    setDraftFilters({ ...initialFilters, city: "Tất cả" });
-    setAppliedFilters({ ...initialFilters, city: "Tất cả" });
+    setDraftFilters({ ...initialFilters });
+    setAppliedFilters({ ...initialFilters });
     setSearchText("");
     setAppliedSearchText("");
+    setMapBounds(null);
     setPage(1);
     setSponsoredPage(0);
   };
 
-  const activeFilterKeys = (Object.keys(appliedFilters) as (keyof Filters)[]).filter(
-    (key): key is Exclude<keyof Filters, "priceMin" | "priceMax"> =>
-      key !== "priceMin" && key !== "priceMax" && appliedFilters[key] !== "Tất cả"
-  );
-  const activeChips: { key: FilterKey; label: string }[] = activeFilterKeys.map((key) => ({
-    key,
-    label: appliedFilters[key],
-  }));
+  const activeChips: { key: FilterKey | "bounds"; label: string }[] = [];
+  if (appliedFilters.transaction !== "Tất cả") {
+    activeChips.push({
+      key: "transaction",
+      label: appliedFilters.transaction,
+    });
+  }
+  if (appliedFilters.city !== "Tất cả") {
+    activeChips.push({ key: "city", label: appliedFilters.city });
+  }
+  if (appliedFilters.ward !== "Tất cả") {
+    activeChips.push({ key: "ward", label: appliedFilters.ward });
+  }
+  if (appliedFilters.propertyType !== "Tất cả") {
+    activeChips.push({
+      key: "propertyType",
+      label: appliedFilters.propertyType,
+    });
+  }
   if (
-    appliedFilters.priceMin !== initialFilters.priceMin ||
-    appliedFilters.priceMax !== initialFilters.priceMax
+    appliedFilters.transaction !== "Tất cả" &&
+    (appliedFilters.priceMin.trim() !== "" ||
+      appliedFilters.priceMax.trim() !== "")
   ) {
     activeChips.push({
       key: "price",
-      label: `${formatFilterPrice(Number(appliedFilters.priceMin) || 0)} - ${formatFilterPrice(
-        Number(appliedFilters.priceMax) || 0
-      )}`,
+      label: formatPriceRangeLabel(
+        appliedFilters.priceMin,
+        appliedFilters.priceMax,
+        appliedFilters.priceMode
+      ),
+    });
+  }
+  if (appliedFilters.area !== "Tất cả") {
+    activeChips.push({ key: "area", label: appliedFilters.area });
+  }
+  if (mapBounds) {
+    activeChips.push({
+      key: "bounds",
+      label: `Khung bản đồ: ${mapBounds.label}`,
     });
   }
 
-  const removeChip = (key: FilterKey) => {
+  const removeChip = (key: FilterKey | "bounds") => {
+    if (key === "bounds") {
+      setMapBounds(null);
+      setPage(1);
+      return;
+    }
     if (key === "price") {
       const next = {
         ...appliedFilters,
-        priceMin: initialFilters.priceMin,
-        priceMax: initialFilters.priceMax,
+        priceMin: "",
+        priceMax: "",
       };
       setDraftFilters(next);
       setAppliedFilters(next);
@@ -516,28 +732,69 @@ export function SearchPage() {
     }
     const next = { ...appliedFilters, [key]: "Tất cả" };
     if (key === "city") next.ward = "Tất cả";
+    if (key === "transaction") {
+      next.priceMin = "";
+      next.priceMax = "";
+    }
     setDraftFilters(next);
     setAppliedFilters(next);
     setPage(1);
     setSponsoredPage(0);
   };
 
-  const selectFilterOption = (key: Exclude<FilterKey, "price">, value: string) => {
+  const selectFilterOption = (
+    key: Exclude<FilterKey, "price">,
+    value: string
+  ) => {
     setDraftFilters((current) => ({
       ...current,
       [key]: value,
       ...(key === "city" ? { ward: "Tất cả" } : {}),
+      ...(key === "transaction" && value === "Tất cả"
+        ? { priceMin: "", priceMax: "" }
+        : {}),
     }));
     setActiveFilter(null);
   };
 
-  const toggleFavorite = (id: number) => {
+  const toggleFavorite = async (id: string | number) => {
+    const exists = favorites.includes(id);
+
+    if (typeof id === "string") {
+      if (!isAuthenticated) {
+        navigate("/dang-nhap", {
+          state: { from: { pathname: "/tim-kiem" } },
+        });
+        return;
+      }
+
+      setFavorites((current) =>
+        exists ? current.filter((item) => item !== id) : [...current, id]
+      );
+      try {
+        if (exists) {
+          await favoriteService.removeFavorite(id);
+        } else {
+          await favoriteService.addFavorite(id);
+        }
+      } catch {
+        // Hoàn tác nếu API lỗi
+        setFavorites((current) =>
+          exists ? [...current, id] : current.filter((item) => item !== id)
+        );
+      }
+      return;
+    }
+
     setFavorites((current) =>
-      current.includes(id)
-        ? current.filter((favorite) => favorite !== id)
-        : [...current, id]
+      exists ? current.filter((item) => item !== id) : [...current, id]
     );
   };
+
+  const mapMarkers = useMemo(() => {
+    const combined = [...sponsoredProperties, ...visibleProperties];
+    return combined.slice(0, 8);
+  }, [sponsoredProperties, visibleProperties]);
 
   return (
     <div className="sp-content">
@@ -583,21 +840,33 @@ export function SearchPage() {
           </button>
         ))}
         {activeChips.length > 0 && (
-          <button type="button" className="sp-clear-button" onClick={clearFilters}>
+          <button
+            type="button"
+            className="sp-clear-button"
+            onClick={clearFilters}
+          >
             Xóa tất cả
           </button>
         )}
       </div>
 
       <div className="sp-results-layout">
-        <aside ref={filterPanelRef} className="sp-sidebar" aria-label="Bộ lọc tìm kiếm">
+        <aside
+          ref={filterPanelRef}
+          className="sp-sidebar"
+          aria-label="Bộ lọc tìm kiếm"
+        >
           <h2>Bộ lọc tìm kiếm</h2>
           {filterDefinitions.map(({ key, label, value, options }) => (
             <div className="sp-filter-field" key={key}>
               <button
                 type="button"
-                className={`sp-filter-toggle ${activeFilter === key ? "active" : ""}`}
-                onClick={() => setActiveFilter(activeFilter === key ? null : key)}
+                className={`sp-filter-toggle ${
+                  activeFilter === key ? "active" : ""
+                }`}
+                onClick={() =>
+                  setActiveFilter(activeFilter === key ? null : key)
+                }
                 aria-expanded={activeFilter === key}
                 aria-label={`${label}: ${value}`}
               >
@@ -607,49 +876,135 @@ export function SearchPage() {
               </button>
 
               {activeFilter === key && (
-                <div className="sp-filter-menu" role="group" aria-label={label}>
+                <div
+                  className="sp-filter-menu"
+                  role="group"
+                  aria-label={label}
+                >
                   {key === "price" ? (
-                    <div className="sp-price-input-wrap">
-                      <label className="sp-price-input-control">
-                        <span>Từ (VNĐ)</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={draftFilters.priceMin}
-                          onChange={(event) => {
-                            const digits = event.target.value.replace(/\D/g, "");
-                            const amount = Math.min(Number(digits) || 0, maxPrice);
-                            setDraftFilters((current) => ({
-                              ...current,
-                              priceMin: String(
-                                Math.min(amount, Number(current.priceMax) || 0)
-                              ),
-                            }));
-                          }}
-                          aria-label="Giá thấp nhất, đơn vị VNĐ"
-                        />
-                      </label>
-                      <label className="sp-price-input-control">
-                        <span>Đến (VNĐ)</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={draftFilters.priceMax}
-                          onChange={(event) => {
-                            const digits = event.target.value.replace(/\D/g, "");
-                            const amount = Math.min(Number(digits) || 0, maxPrice);
-                            setDraftFilters((current) => ({
-                              ...current,
-                              priceMax: String(
-                                Math.max(amount, Number(current.priceMin) || 0)
-                              ),
-                            }));
-                          }}
-                          aria-label="Giá cao nhất, đơn vị VNĐ"
-                        />
-                      </label>
+                    <div className="sp-price-popover">
+                      <div
+                        className="sp-price-mode-tabs"
+                        role="group"
+                        aria-label="Chế độ lọc giá"
+                      >
+                        <button
+                          type="button"
+                          className={`sp-price-mode-tab ${
+                            draftFilters.priceMode === "tong" ? "active" : ""
+                          }`}
+                          onClick={() =>
+                            setDraftFilters((curr) => ({
+                              ...curr,
+                              priceMode: "tong",
+                            }))
+                          }
+                        >
+                          Tổng giá (VNĐ)
+                        </button>
+                        <button
+                          type="button"
+                          className={`sp-price-mode-tab ${
+                            draftFilters.priceMode === "m2" ? "active" : ""
+                          }`}
+                          onClick={() =>
+                            setDraftFilters((curr) => ({
+                              ...curr,
+                              priceMode: "m2",
+                            }))
+                          }
+                        >
+                          Đơn giá / m²
+                        </button>
+                      </div>
+
+                      {draftFilters.transaction === "Tất cả" ? (
+                        <div className="sp-price-require-tx">
+                          <p>
+                            Vui lòng chọn nhu cầu giao dịch trước khi lọc theo
+                            khoảng giá:
+                          </p>
+                          <div className="sp-price-tx-quick-btns">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDraftFilters((curr) => ({
+                                  ...curr,
+                                  transaction: "Mua bán",
+                                }))
+                              }
+                            >
+                              Mua bán
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDraftFilters((curr) => ({
+                                  ...curr,
+                                  transaction: "Cho thuê",
+                                }))
+                              }
+                            >
+                              Cho thuê
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="sp-price-input-wrap">
+                          <label className="sp-price-input-control">
+                            <span>
+                              Từ (
+                              {draftFilters.priceMode === "m2"
+                                ? "VNĐ/m²"
+                                : "VNĐ"}
+                              )
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="Tối thiểu"
+                              value={draftFilters.priceMin}
+                              onChange={(event) => {
+                                const digits = event.target.value.replace(
+                                  /\D/g,
+                                  ""
+                                );
+                                setDraftFilters((current) => ({
+                                  ...current,
+                                  priceMin: digits,
+                                }));
+                              }}
+                              aria-label="Giá thấp nhất"
+                            />
+                          </label>
+                          <label className="sp-price-input-control">
+                            <span>
+                              Đến (
+                              {draftFilters.priceMode === "m2"
+                                ? "VNĐ/m²"
+                                : "VNĐ"}
+                              )
+                            </span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="Tối đa"
+                              value={draftFilters.priceMax}
+                              onChange={(event) => {
+                                const digits = event.target.value.replace(
+                                  /\D/g,
+                                  ""
+                                );
+                                setDraftFilters((current) => ({
+                                  ...current,
+                                  priceMax: digits,
+                                }));
+                              }}
+                              aria-label="Giá cao nhất"
+                            />
+                          </label>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -662,7 +1017,9 @@ export function SearchPage() {
                             type="text"
                             placeholder="Tìm tỉnh, thành phố..."
                             value={citySearchText}
-                            onChange={(event) => setCitySearchText(event.target.value)}
+                            onChange={(event) =>
+                              setCitySearchText(event.target.value)
+                            }
                             className="sp-filter-search-input"
                             aria-label="Tìm kiếm tỉnh, thành phố"
                             autoFocus
@@ -671,8 +1028,9 @@ export function SearchPage() {
                                 event.preventDefault();
                                 if (filteredCityOptions.length > 0) {
                                   const match =
-                                    filteredCityOptions.find((o) => o !== "Tất cả") ||
-                                    filteredCityOptions[0];
+                                    filteredCityOptions.find(
+                                      (o) => o !== "Tất cả"
+                                    ) || filteredCityOptions[0];
                                   selectFilterOption("city", match);
                                   setCitySearchText("");
                                 }
@@ -699,7 +1057,9 @@ export function SearchPage() {
                             type="text"
                             placeholder="Tìm xã, phường..."
                             value={wardSearchText}
-                            onChange={(event) => setWardSearchText(event.target.value)}
+                            onChange={(event) =>
+                              setWardSearchText(event.target.value)
+                            }
                             className="sp-filter-search-input"
                             aria-label="Tìm kiếm xã, phường"
                             autoFocus
@@ -708,8 +1068,9 @@ export function SearchPage() {
                                 event.preventDefault();
                                 if (filteredWardOptions.length > 0) {
                                   const match =
-                                    filteredWardOptions.find((o) => o !== "Tất cả") ||
-                                    filteredWardOptions[0];
+                                    filteredWardOptions.find(
+                                      (o) => o !== "Tất cả"
+                                    ) || filteredWardOptions[0];
                                   handleSelectWard(match);
                                 }
                               }
@@ -766,6 +1127,7 @@ export function SearchPage() {
               setAppliedFilters(draftFilters);
               setPage(1);
               setSponsoredPage(0);
+              setActiveFilter(null);
             }}
           >
             Áp dụng bộ lọc
@@ -773,17 +1135,40 @@ export function SearchPage() {
         </aside>
 
         <section className="sp-results" aria-label="Kết quả tìm kiếm">
+          {apiError && (
+            <div className="sp-error-banner" role="alert">
+              <span>{apiError}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setApiError(null);
+                  setAppliedFilters({ ...appliedFilters });
+                }}
+              >
+                Thử lại
+              </button>
+            </div>
+          )}
+
+          {/* Vùng 1: Khu tin tài trợ độc lập (tối đa 5 tin theo TK-10 & TK-12) */}
           {sponsoredProperties.length > 0 && (
-            <section className="sp-sponsored-section" aria-label="Tin được tài trợ">
+            <section
+              className="sp-sponsored-section"
+              aria-label="Tin được tài trợ"
+            >
               <div className="sp-sponsored-header">
                 <div>
-                  <p className="sp-sponsored-eyebrow">Tin được tài trợ</p>
+                  <p className="sp-sponsored-eyebrow">
+                    Tin được tài trợ ({sponsoredProperties.length})
+                  </p>
                   <h2 className="sp-sponsored-title">
                     Lựa chọn đang được ưu tiên hiển thị
                   </h2>
                 </div>
                 <div className="sp-sponsored-actions">
-                  <p className="sp-sponsored-disclosure">Vị trí quảng bá trả phí</p>
+                  <p className="sp-sponsored-disclosure">
+                    Vị trí quảng bá trả phí
+                  </p>
                   {sponsoredProperties.length > sponsoredPageSize && (
                     <div
                       className="sp-sponsored-navigation"
@@ -794,7 +1179,9 @@ export function SearchPage() {
                         type="button"
                         className="sp-sponsored-arrow"
                         onClick={() =>
-                          setSponsoredPage((current) => Math.max(0, current - 1))
+                          setSponsoredPage((current) =>
+                            Math.max(0, current - 1)
+                          )
                         }
                         disabled={sponsoredPage === 0}
                         aria-label="Xem tin được tài trợ trước"
@@ -840,10 +1227,11 @@ export function SearchPage() {
             </section>
           )}
 
+          {/* Vùng 2: Khu kết quả tự nhiên độc lập có phân trang */}
           <div className="sp-results-toolbar">
             <div className="sp-results-heading">
               <strong className="sp-result-count">
-                {filteredProperties.length.toLocaleString("vi-VN")} kết quả
+                {regularTotalCount.toLocaleString("vi-VN")} kết quả tự nhiên
               </strong>
             </div>
 
@@ -856,7 +1244,10 @@ export function SearchPage() {
                   aria-expanded={sortOpen}
                   aria-haspopup="listbox"
                 >
-                  {sortOptions.find((option) => option.value === sortOrder)?.label}
+                  {
+                    sortOptions.find((option) => option.value === sortOrder)
+                      ?.label
+                  }
                   <Icon name="chevron" />
                 </button>
 
@@ -922,22 +1313,70 @@ export function SearchPage() {
               role="region"
               aria-label="Bản đồ vị trí bất động sản"
             >
+              <div className="sp-map-bounds-bar">
+                <span>Khung bản đồ (TK-05):</span>
+                {MAP_BOUNDS_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    className={`sp-map-bounds-btn ${
+                      mapBounds?.label === preset.label ? "active" : ""
+                    }`}
+                    onClick={() => {
+                      setMapBounds(
+                        mapBounds?.label === preset.label ? null : preset
+                      );
+                      setPage(1);
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
               <div className="sp-map-road" />
-              <div className="sp-map-marker sp-marker-one">
-                <strong>4,2 tỷ</strong>
-                <span>Thủ Đức</span>
-              </div>
-              <div className="sp-map-marker sp-marker-two">
-                <strong>8,9 tỷ</strong>
-                <span>Bình Thạnh</span>
-              </div>
-              <div className="sp-map-marker sp-marker-three">
-                <strong>18 tr/th</strong>
-                <span>An Phú</span>
-              </div>
+              {mapMarkers.length > 0 ? (
+                mapMarkers.map((item, idx) => {
+                  const positions = [
+                    { top: "24%", left: "22%" },
+                    { top: "48%", left: "58%" },
+                    { top: "66%", left: "34%" },
+                    { top: "30%", left: "68%" },
+                    { top: "60%", left: "72%" },
+                    { top: "38%", left: "38%" },
+                    { top: "74%", left: "52%" },
+                    { top: "22%", left: "48%" },
+                  ];
+                  const pos = positions[idx % positions.length];
+                  return (
+                    <Link
+                      to={`/tin-dang/${item.id}`}
+                      key={`marker-${item.id}`}
+                      className="sp-map-marker"
+                      style={{
+                        top: pos.top,
+                        left: pos.left,
+                        textDecoration: "none",
+                      }}
+                    >
+                      <strong>{item.price}</strong>
+                      <span>{item.place}</span>
+                    </Link>
+                  );
+                })
+              ) : (
+                <div className="sp-map-marker sp-marker-one">
+                  <strong>Chưa có điểm ghim</strong>
+                  <span>Không có tin trong vùng lọc hiện tại</span>
+                </div>
+              )}
               <p>
-                <Icon name="map" /> Vị trí hiển thị minh họa theo tin đăng
+                <Icon name="map" /> Nhấn vào điểm ghim giá trên bản đồ để mở chi
+                tiết bất động sản
               </p>
+            </div>
+          ) : isLoading ? (
+            <div className="sp-empty-state" aria-live="polite">
+              <p>Đang tải danh sách bất động sản...</p>
             </div>
           ) : visibleProperties.length > 0 ? (
             <div
@@ -954,20 +1393,10 @@ export function SearchPage() {
                 />
               ))}
             </div>
-          ) : regularProperties.length > 0 ? (
-            <div className="sp-empty-state">
-              <span>
-                <Icon name="search" />
-              </span>
-              <h2>Chưa tìm thấy bất động sản phù hợp</h2>
-              <p>Thử thay đổi từ khóa hoặc nới rộng bộ lọc để xem thêm kết quả.</p>
-              <button type="button" onClick={clearFilters}>
-                Xóa bộ lọc
-              </button>
-            </div>
-          ) : filteredProperties.length > 0 ? (
+          ) : sponsoredProperties.length > 0 ? (
             <div className="sp-no-regular-results">
-              Các tin phù hợp hiện đang được hiển thị trong mục tài trợ phía trên.
+              Không có kết quả tự nhiên cho bộ lọc hiện tại. Các tin được tài
+              trợ phù hợp vẫn được hiển thị ở khu vực phía trên.
             </div>
           ) : (
             <div className="sp-empty-state">
@@ -975,14 +1404,18 @@ export function SearchPage() {
                 <Icon name="search" />
               </span>
               <h2>Chưa tìm thấy bất động sản phù hợp</h2>
-              <p>Thử thay đổi từ khóa hoặc nới rộng bộ lọc để xem thêm kết quả.</p>
-              <button type="button" onClick={clearFilters}>
-                Xóa bộ lọc
-              </button>
+              <p>
+                Thử thay đổi từ khóa hoặc nới rộng bộ lọc để xem thêm kết quả.
+              </p>
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <button type="button" onClick={clearFilters}>
+                  Xóa bộ lọc
+                </button>
+              </div>
             </div>
           )}
 
-          {!mapView && regularProperties.length > pageSize && (
+          {!mapView && regularTotalCount > pageSize && (
             <nav className="sp-pagination" aria-label="Phân trang kết quả">
               <button
                 type="button"
@@ -1020,23 +1453,25 @@ export function SearchPage() {
         </section>
       </div>
 
-      {/* Mục Gợi ý cho bạn */}
-      <section className="sp-recommendations">
-        <p className="sp-eyebrow">Gợi ý cho bạn</p>
-        <h2>Có thể bạn sẽ thích</h2>
-        <p>Dựa trên lịch sử xem và tin yêu thích của bạn.</p>
-        <div className="sp-recommendation-grid">
-          {properties.slice(0, 3).map((property) => (
-            <PropertyCard
-              key={`suggested-${property.id}`}
-              property={property}
-              tag="Gợi ý cho bạn"
-              isFavorite={favorites.includes(property.id)}
-              onToggleFavorite={toggleFavorite}
-            />
-          ))}
-        </div>
-      </section>
+      {/* Mục Gợi ý cho bạn (chỉ hiển thị từ dữ liệu thật nếu có) */}
+      {apiRegular.length > 0 && (
+        <section className="sp-recommendations">
+          <p className="sp-eyebrow">Gợi ý cho bạn</p>
+          <h2>Có thể bạn sẽ thích</h2>
+          <p>Dựa trên kết quả bất động sản mới nhất trên hệ thống.</p>
+          <div className="sp-recommendation-grid">
+            {apiRegular.slice(0, 3).map((property) => (
+              <PropertyCard
+                key={`suggested-${property.id}`}
+                property={property}
+                tag="Gợi ý cho bạn"
+                isFavorite={favorites.includes(property.id)}
+                onToggleFavorite={toggleFavorite}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

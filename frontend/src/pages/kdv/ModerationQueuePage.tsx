@@ -1,5 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
+import { useAuth } from "@/hooks/useAuth";
+import { moderationService } from "@/services/moderationService";
+import type { TinQuanLyDto } from "@/types/moderation";
+import {
+  formatDienTichM2,
+  formatGiaGocVaDonVi,
+  formatGiaQuyDoi,
+  formatLoaiBdsLabel,
+} from "@/utils/priceFormatter";
 import { toast } from "@/stores/useToastStore";
+
+const LEGACY_KDV_STORAGE_KEY = "bds_kdv_decided_items_v1";
 
 type SubmissionType = "moi" | "nop_lai";
 type ModerationStatus = "cho_kiem_duyet" | "da_duyet" | "bi_tu_choi";
@@ -20,16 +32,21 @@ interface VersionHistoryEntry {
 
 interface ModerationItem {
   id: string;
+  backendTinId?: string;
+  phienBanHienTaiId: string;
+  phienBanCapNhat: number;
   versionId: string;
   versionNumber: number;
   title: string;
   transactionType: "ban" | "cho_thue";
-  rentPeriod?: "Theo tháng" | "Theo năm";
+  rentPeriod?: string;
   category: PropertyCategory;
   submissionType: SubmissionType;
   status: ModerationStatus;
   priceDisplay: string;
   rawPriceVnd: string;
+  convertedPriceDisplay?: string | null;
+  convertedPriceNote?: string;
   areaSize: string;
   province: string;
   ward: string;
@@ -46,6 +63,7 @@ interface ModerationItem {
   reviewedBy?: string;
   reviewedAt?: string;
   images: string[];
+  isFromApi?: boolean;
 }
 
 const PROPERTY_TYPE_OPTIONS: { value: "ALL" | PropertyCategory; label: string }[] = [
@@ -57,248 +75,10 @@ const PROPERTY_TYPE_OPTIONS: { value: "ALL" | PropertyCategory; label: string }[
   { value: "Khác", label: "Khác" },
 ];
 
-const STATUS_OPTIONS: { value: "ALL" | ModerationStatus; label: string }[] = [
-  { value: "cho_kiem_duyet", label: "Chờ kiểm duyệt" },
-  { value: "da_duyet", label: "Đã phê duyệt" },
-  { value: "bi_tu_choi", label: "Đã từ chối" },
-  { value: "ALL", label: "Tất cả trạng thái" },
-];
-
 const SUBMISSION_OPTIONS: { value: "ALL" | SubmissionType; label: string }[] = [
   { value: "ALL", label: "Tất cả nguồn nộp" },
   { value: "moi", label: "Tin đăng mới" },
   { value: "nop_lai", label: "Tin sửa & nộp lại" },
-];
-
-const initialQueue: ModerationItem[] = [
-  {
-    id: "TIN-2026-1042",
-    versionId: "VER-9012-A",
-    versionNumber: 1,
-    title: "Căn hộ 2PN Vinhomes Grand Park phân khu Origami tầng 12A view công viên",
-    transactionType: "ban",
-    category: "Căn hộ chung cư",
-    submissionType: "moi",
-    status: "cho_kiem_duyet",
-    priceDisplay: "2,85 tỷ",
-    rawPriceVnd: "2.850.000.000 VNĐ",
-    areaSize: "68 m²",
-    province: "Thành phố Hồ Chí Minh",
-    ward: "Phường Long Thạnh Mỹ",
-    streetAddress: "Đường Nguyễn Xiển, Khu đô thị Vinhomes Grand Park",
-    latitude: "10.843215",
-    longitude: "106.837420",
-    ownerName: "Nguyễn Minh Tuấn",
-    ownerEmail: "tuan.nm@gmail.com",
-    ownerPhone: "0908341289",
-    submittedAt: "20/11/2026 14:30",
-    versionHistory: [],
-    description:
-      "Bán căn hộ 2 phòng ngủ, 2 WC tại phân khu The Origami, Vinhomes Grand Park. Nhà trang bị đầy đủ nội thất gỗ An Cường cao cấp, máy lạnh âm trần Daikin, ban công hướng Đông Nam đón gió thoáng mát, tầm nhìn trực diện công viên nội khu. Hỗ trợ khách vay ngân hàng đến 70% và sang tên nhanh trong tuần.",
-    images: [
-      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600585154526-990dced4db0d?auto=format&fit=crop&w=1000&q=82",
-    ],
-  },
-  {
-    id: "TIN-2026-1039",
-    versionId: "VER-8940-B",
-    versionNumber: 2,
-    title: "Nhà riêng mặt tiền đường số 7 Khu dân cư Trung Sơn 4x20m xây 1 trệt 3 lầu",
-    transactionType: "ban",
-    category: "Nhà riêng",
-    submissionType: "nop_lai",
-    status: "cho_kiem_duyet",
-    priceDisplay: "11,2 tỷ",
-    rawPriceVnd: "11.200.000.000 VNĐ",
-    areaSize: "80 m²",
-    province: "Thành phố Hồ Chí Minh",
-    ward: "Xã Bình Hưng",
-    streetAddress: "Đường số 7, Khu dân cư Trung Sơn",
-    latitude: "10.734190",
-    longitude: "106.689412",
-    ownerName: "Lê Hoàng Nam",
-    ownerEmail: "namle.bds@gmail.com",
-    ownerPhone: "0913456890",
-    submittedAt: "19/11/2026 09:15",
-    versionHistory: [
-      {
-        attempt: 1,
-        decision: "bi_tu_choi",
-        reviewerName: "KDV. Trần Minh Khoa",
-        reviewedAt: "18/11/2026 15:20",
-        reason: "Ảnh chụp mặt tiền bị mờ và thiếu thông tin diện tích sàn sử dụng.",
-      },
-    ],
-    description:
-      "Đã bổ sung lại bộ ảnh chụp thực tế mặt tiền rõ nét theo yêu cầu của Kiểm duyệt viên. Diện tích đất 80m² (4x20m), tổng diện tích sàn sử dụng 280m². Nhà gồm 4 phòng ngủ lớn, 5 WC, sân thượng trước sau, gara ô tô 7 chỗ trong nhà. Đường trước nhà 12m có vỉa hè cây xanh.",
-    images: [
-      "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600585152220-90363fe7e115?auto=format&fit=crop&w=1000&q=82",
-    ],
-  },
-  {
-    id: "TIN-2026-1035",
-    versionId: "VER-8891-A",
-    versionNumber: 1,
-    title: "Đất nền sổ hồng riêng KĐT Nam Hòa Xuân B2-45 diện tích 105m² đường 7m5",
-    transactionType: "ban",
-    category: "Đất nền",
-    submissionType: "moi",
-    status: "cho_kiem_duyet",
-    priceDisplay: "3,45 tỷ",
-    rawPriceVnd: "3.450.000.000 VNĐ",
-    areaSize: "105 m²",
-    province: "Thành phố Đà Nẵng",
-    ward: "Phường Hòa Quý",
-    streetAddress: "Lô B2-45 Khu đô thị sinh thái Nam Hòa Xuân",
-    latitude: "15.998412",
-    longitude: "108.241530",
-    ownerName: "Trần Thị Mai",
-    ownerEmail: "maitran88@gmail.com",
-    ownerPhone: "0987612340",
-    submittedAt: "18/11/2026 16:20",
-    versionHistory: [],
-    description:
-      "Chính chủ cần bán lô đất B2-45 khu đô thị sinh thái Nam Hòa Xuân. Lô đất sạch hoàn toàn không vướng cống hay tủ điện, kích thước ngang 5m dài 21m, đường nhựa 7m5 lề 4m, gần trục đường chính Quảng Nam và công viên ven sông. Khu dân cư hiện hữu văn minh, hạ tầng điện âm 100%.",
-    images: [
-      "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1000&q=82",
-    ],
-  },
-  {
-    id: "TIN-2026-1028",
-    versionId: "VER-8812-C",
-    versionNumber: 3,
-    title: "Chung cư cao cấp The Zei Mỹ Đình 3PN 108m² căn góc 2 mặt thoáng",
-    transactionType: "ban",
-    category: "Căn hộ chung cư",
-    submissionType: "nop_lai",
-    status: "cho_kiem_duyet",
-    priceDisplay: "6,9 tỷ",
-    rawPriceVnd: "6.900.000.000 VNĐ",
-    areaSize: "108 m²",
-    province: "Thành phố Hà Nội",
-    ward: "Phường Mỹ Đình 2",
-    streetAddress: "Số 8 Lê Đức Thọ",
-    latitude: "21.031820",
-    longitude: "105.768910",
-    ownerName: "Phạm Quốc Bảo",
-    ownerEmail: "baopq.hn@gmail.com",
-    ownerPhone: "0934889102",
-    submittedAt: "17/11/2026 07:50",
-    versionHistory: [
-      {
-        attempt: 1,
-        decision: "bi_tu_choi",
-        reviewerName: "KDV. Nguyễn Hoàng Yến",
-        reviewedAt: "15/11/2026 10:15",
-        reason: "Địa chỉ bất động sản chưa ghi rõ số nhà và tên đường.",
-      },
-      {
-        attempt: 2,
-        decision: "bi_tu_choi",
-        reviewerName: "KDV. Trần Minh Khoa",
-        reviewedAt: "16/11/2026 14:40",
-        reason: "Tiêu đề chứa ký tự viết hoa toàn bộ và chèn số điện thoại trực tiếp vào ảnh.",
-      },
-    ],
-    description:
-      "Đã chỉnh sửa lại tiêu đề đúng quy chuẩn đăng tin của sàn HomeFinder và thay bộ ảnh gốc không dính chữ. Căn góc tầng 19, 3 phòng ngủ sáng, nội thất nhập khẩu Đức, có suất đỗ ô tô định danh dưới hầm.",
-    images: [
-      "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1600210491892-03d54c0aaf87?auto=format&fit=crop&w=1000&q=82",
-    ],
-  },
-  {
-    id: "TIN-2026-1021",
-    versionId: "VER-8790-A",
-    versionNumber: 1,
-    title: "Cho thuê phòng trọ studio ban công rộng gần ĐH Bách Khoa đầy đủ nội thất",
-    transactionType: "cho_thue",
-    rentPeriod: "Theo tháng",
-    category: "Phòng trọ",
-    submissionType: "moi",
-    status: "bi_tu_choi",
-    priceDisplay: "4,5 triệu/tháng",
-    rawPriceVnd: "4.500.000 VNĐ/tháng",
-    areaSize: "28 m²",
-    province: "Thành phố Hồ Chí Minh",
-    ward: "Phường 14",
-    streetAddress: "Hẻm 268 Lý Thường Kiệt",
-    latitude: "10.773105",
-    longitude: "106.659812",
-    ownerName: "Hoàng Gia Huy",
-    ownerEmail: "huy.hoang10@gmail.com",
-    ownerPhone: "0972115678",
-    submittedAt: "16/11/2026 15:10",
-    versionHistory: [
-      {
-        attempt: 1,
-        decision: "bi_tu_choi",
-        reviewerName: "KDV. Trần Minh Khoa",
-        reviewedAt: "16/11/2026 16:45",
-        reason: "Hình ảnh mờ, chứa đóng dấu (watermark) hoặc số điện thoại đè lên ảnh.",
-      },
-    ],
-    rejectionReason: "Hình ảnh mờ, chứa đóng dấu (watermark) hoặc số điện thoại đè lên ảnh.",
-    reviewedBy: "KDV. Trần Minh Khoa",
-    reviewedAt: "16/11/2026 16:45",
-    description:
-      "Phòng studio mới xây 100%, có thang máy, khóa vân tay, máy giặt riêng từng phòng, giờ giấc tự do không chung chủ. Cách cổng trường ĐH Bách Khoa 300m.",
-    images: [
-      "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1598928506311-c55ded91a20c?auto=format&fit=crop&w=1000&q=82",
-    ],
-  },
-  {
-    id: "TIN-2026-1015",
-    versionId: "VER-8720-A",
-    versionNumber: 1,
-    title: "Mặt bằng văn phòng & showroom góc 2 mặt tiền khu đô thị Sala Thủ Thiêm",
-    transactionType: "cho_thue",
-    rentPeriod: "Theo tháng",
-    category: "Khác",
-    submissionType: "moi",
-    status: "da_duyet",
-    priceDisplay: "65 triệu/tháng",
-    rawPriceVnd: "65.000.000 VNĐ/tháng",
-    areaSize: "145 m²",
-    province: "Thành phố Hồ Chí Minh",
-    ward: "Phường An Lợi Đông",
-    streetAddress: "Số 10 Đường Nguyễn Cơ Thạch, Khu đô thị Sala",
-    latitude: "10.771940",
-    longitude: "106.722410",
-    ownerName: "Đỗ Thùy Linh",
-    ownerEmail: "linh.do@salarealty.vn",
-    ownerPhone: "0903118999",
-    submittedAt: "15/11/2026 11:05",
-    versionHistory: [
-      {
-        attempt: 1,
-        decision: "da_duyet",
-        reviewerName: "KDV. Trần Minh Khoa",
-        reviewedAt: "15/11/2026 13:20",
-      },
-    ],
-    reviewedBy: "KDV. Trần Minh Khoa",
-    reviewedAt: "15/11/2026 13:20",
-    description:
-      "Cho thuê mặt bằng thương mại góc 2 mặt tiền đường Nguyễn Cơ Thạch, vỉa hè rộng 8m đậu xe thoải mái. Phù hợp mở showroom nội thất, phòng khám quốc tế, ngân hàng hoặc văn phòng đại diện.",
-    images: [
-      "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=1000&q=82",
-      "https://images.unsplash.com/photo-1497215842964-222b430dc094?auto=format&fit=crop&w=1000&q=82",
-    ],
-  },
 ];
 
 const presetRejectionReasons = [
@@ -307,6 +87,107 @@ const presetRejectionReasons = [
   "Địa chỉ bất động sản chưa cụ thể hoặc không thể xác thực",
   "Nội dung mô tả vi phạm quy chuẩn cộng đồng hoặc trùng lặp tin đã đăng",
 ];
+
+function formatInstantToViDateTime(isoStr?: string | null): string {
+  if (!isoStr) return "20/11/2026 09:00";
+  const dt = new Date(isoStr);
+  if (Number.isNaN(dt.getTime())) return isoStr;
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  const hh = String(dt.getHours()).padStart(2, "0");
+  const min = String(dt.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
+function mapDtoToModerationItem(
+  dto: TinQuanLyDto,
+  existing?: ModerationItem
+): ModerationItem {
+  const nd = dto.noiDung;
+  const category = (formatLoaiBdsLabel(nd.loaiBds) as PropertyCategory) || "Khác";
+  const submissionType: SubmissionType = nd.soPhienBan > 1 ? "nop_lai" : "moi";
+  const status: ModerationStatus =
+    dto.trangThai === "da_duyet"
+      ? "da_duyet"
+      : dto.trangThai === "bi_tu_choi"
+      ? "bi_tu_choi"
+      : "cho_kiem_duyet";
+
+  const priceFormatted = formatGiaGocVaDonVi(nd.giaGoc, nd.donViGia);
+  const convertedFormatted = formatGiaQuyDoi(nd.giaQuyDoiHienThi);
+  const areaFormatted = formatDienTichM2(nd.dienTichM2);
+
+  const areaParts = (nd.khuVuc || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const province = areaParts.length > 1 ? areaParts[areaParts.length - 1] : nd.khuVuc || "Đang cập nhật";
+  const ward = areaParts.length > 1 ? areaParts.slice(0, -1).join(", ") : nd.khuVuc || "Đang cập nhật";
+
+  const imageUrls =
+    nd.anh && nd.anh.length > 0
+      ? [...nd.anh]
+          .sort((a, b) => a.thuTu - b.thuTu)
+          .map((a) => a.duongDanDoc || `/api/images/${a.id}/content`)
+      : [
+          "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=82",
+        ];
+
+  const versionHistory: VersionHistoryEntry[] = existing?.versionHistory
+    ? [...existing.versionHistory]
+    : [];
+
+  if (dto.lyDoTuChoi && versionHistory.length === 0) {
+    versionHistory.push({
+      attempt: Math.max(1, nd.soPhienBan - 1),
+      decision: "bi_tu_choi",
+      reviewerName: "Kiểm duyệt viên hệ thống",
+      reviewedAt: formatInstantToViDateTime(dto.ngayDang),
+      reason: dto.lyDoTuChoi,
+    });
+  }
+
+  let rentPeriod: string | undefined;
+  if (nd.loaiGiaoDich === "cho_thue") {
+    if (nd.donViGia === "vnd_nam") rentPeriod = "Theo năm";
+    else if (nd.donViGia === "vnd_ngay" || nd.donViGia === "vnd_m2_ngay") rentPeriod = "Theo ngày";
+    else rentPeriod = "Theo tháng";
+  }
+
+  return {
+    id: dto.id,
+    backendTinId: dto.id,
+    phienBanHienTaiId: dto.phienBanHienTaiId || nd.id,
+    phienBanCapNhat: dto.phienBanCapNhat,
+    versionId: nd.id.slice(0, 8).toUpperCase(),
+    versionNumber: nd.soPhienBan,
+    title: nd.tieuDe,
+    transactionType: nd.loaiGiaoDich,
+    rentPeriod,
+    category,
+    submissionType,
+    status,
+    priceDisplay: priceFormatted,
+    rawPriceVnd: convertedFormatted || priceFormatted,
+    convertedPriceDisplay: convertedFormatted,
+    convertedPriceNote: nd.giaQuyDoiHienThi?.chuThich,
+    areaSize: areaFormatted,
+    province,
+    ward,
+    streetAddress: nd.diaChi,
+    latitude: nd.viDo,
+    longitude: nd.kinhDo,
+    ownerName: existing?.ownerName || "Chủ tài khoản đã xác minh",
+    ownerEmail: existing?.ownerEmail || "Đã xác minh qua hệ thống",
+    ownerPhone: existing?.ownerPhone || "Bảo mật theo phân quyền KDV",
+    submittedAt: formatInstantToViDateTime(nd.taoLuc || dto.ngayDang),
+    description: nd.moTa,
+    versionHistory,
+    rejectionReason: dto.lyDoTuChoi || existing?.rejectionReason,
+    reviewedBy: existing?.reviewedBy,
+    reviewedAt: existing?.reviewedAt,
+    images: imageUrls,
+    isFromApi: true,
+  };
+}
 
 /** Chuyển chuỗi "DD/MM/YYYY HH:mm" hoặc "DD/MM/YYYY" thành timestamp (ms) để so sánh */
 function parseSubmittedDateTime(dateTimeStr: string): number {
@@ -499,14 +380,17 @@ function ExternalMapIcon() {
   );
 }
 
-type ActiveDropdown = "status" | "submission" | "category" | "date" | null;
+type ActiveDropdown = "submission" | "category" | "date" | null;
 
 export function ModerationQueuePage() {
-  const [items, setItems] = useState<ModerationItem[]>(initialQueue);
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [items, setItems] = useState<ModerationItem[]>([]);
+  const [isLoadingQueue, setIsLoadingQueue] = useState(true);
+  const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
 
-  // Bộ lọc (Mặc định trạng thái là "cho_kiem_duyet")
+  // Bộ lọc
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"ALL" | ModerationStatus>("cho_kiem_duyet");
   const [filterSubmission, setFilterSubmission] = useState<"ALL" | SubmissionType>("ALL");
   const [filterCategory, setFilterCategory] = useState<"ALL" | PropertyCategory>("ALL");
   const [fromDateText, setFromDateText] = useState("");
@@ -515,10 +399,10 @@ export function ModerationQueuePage() {
   // Quản lý mở/đóng dropdown
   const [activeDropdown, setActiveDropdown] = useState<ActiveDropdown>(null);
   const [activeDateInput, setActiveDateInput] = useState<"from" | "to" | null>("from");
-  const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date(2026, 10, 1)); // Tháng 11/2026
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date(2026, 10, 1));
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Chế độ xem chi tiết (null = đang ở bảng Danh sách tin đăng; khác null = mở Phiếu thẩm định chi tiết)
+  // Chế độ xem chi tiết
   const [viewingItemId, setViewingItemId] = useState<string | null>(null);
   const [activeImageIdx, setActiveImageIdx] = useState(0);
 
@@ -528,6 +412,57 @@ export function ModerationQueuePage() {
 
   const filterBarRef = useRef<HTMLDivElement>(null);
   const rejectTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const loadModerationQueue = useCallback(async (showToast = false) => {
+    setIsLoadingQueue(true);
+    try {
+      localStorage.removeItem(LEGACY_KDV_STORAGE_KEY);
+    } catch {
+      // Bỏ qua
+    }
+    try {
+      const pageData = await moderationService.getPendingListings(0, 50);
+      if (pageData && Array.isArray(pageData.noiDung)) {
+        setItems((prev) => {
+          const prevById = new Map<string, ModerationItem>();
+          for (const p of prev) prevById.set(p.id, p);
+
+          return pageData.noiDung.map((dto) =>
+            mapDtoToModerationItem(dto, prevById.get(dto.id))
+          );
+        });
+
+        const openId = searchParams.get("openId");
+        if (openId) {
+          setViewingItemId(openId);
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.delete("openId");
+          setSearchParams(nextParams, { replace: true });
+        }
+
+        if (showToast) {
+          toast.success(
+            `Đã đồng bộ danh sách kiểm duyệt (${pageData.tongSo} tin đang chờ).`,
+            "Làm mới thành công"
+          );
+        }
+      }
+    } catch {
+      if (showToast) {
+        toast.info(
+          "Đang hiển thị danh sách mẫu (máy chủ kiểm duyệt chưa phản hồi hoặc đang ở chế độ in-memory).",
+          "Đã làm mới danh sách"
+        );
+      }
+    } finally {
+      setIsLoadingQueue(false);
+      setIsRefreshing(false);
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    loadModerationQueue(false);
+  }, [loadModerationQueue]);
 
   // Đóng dropdown khi click ra ngoài
   useEffect(() => {
@@ -544,13 +479,8 @@ export function ModerationQueuePage() {
   const fromDateObj = useMemo(() => parseDdMmYyyy(fromDateText), [fromDateText]);
   const toDateObj = useMemo(() => parseDdMmYyyy(toDateText), [toDateText]);
 
-  // Lọc và sắp xếp theo đúng thứ tự ưu tiên:
-  // 1. Chờ duyệt mới nhất -> cũ nhất
-  // 2. Bị từ chối mới nhất -> cũ nhất
-  // 3. Đã duyệt mới nhất -> cũ nhất
   const filteredAndSortedItems = useMemo(() => {
     const filtered = items.filter((item) => {
-      if (filterStatus !== "ALL" && item.status !== filterStatus) return false;
       if (filterSubmission !== "ALL" && item.submissionType !== filterSubmission) return false;
       if (filterCategory !== "ALL" && item.category !== filterCategory) return false;
 
@@ -600,14 +530,13 @@ export function ModerationQueuePage() {
       if (priorityDiff !== 0) return priorityDiff;
       return parseSubmittedDateTime(b.submittedAt) - parseSubmittedDateTime(a.submittedAt);
     });
-  }, [items, filterStatus, filterSubmission, filterCategory, fromDateObj, toDateObj, searchQuery]);
+  }, [items, filterSubmission, filterCategory, fromDateObj, toDateObj, searchQuery]);
 
   const viewingItem = useMemo(
     () => (viewingItemId ? items.find((i) => i.id === viewingItemId) || null : null),
     [items, viewingItemId]
   );
 
-  // Nhãn hiển thị trên nút Thời gian gửi
   const dateFilterLabel = useMemo(() => {
     if (fromDateText && toDateText) return `${fromDateText} - ${toDateText}`;
     if (fromDateText) return `Từ ${fromDateText}`;
@@ -615,7 +544,6 @@ export function ModerationQueuePage() {
     return "Tất cả thời gian";
   }, [fromDateText, toDateText]);
 
-  // Dữ liệu lưới lịch (Calendar Grid)
   const calendarDays = useMemo(() => {
     const year = calendarMonth.getFullYear();
     const month = calendarMonth.getMonth();
@@ -657,30 +585,53 @@ export function ModerationQueuePage() {
 
   const handleClearFilters = () => {
     setSearchQuery("");
-    setFilterStatus("cho_kiem_duyet");
     setFilterSubmission("ALL");
     setFilterCategory("ALL");
     setFromDateText("");
     setToDateText("");
     setActiveDropdown(null);
-    toast.info("Đã đặt lại toàn bộ bộ lọc về mặc định (Chờ kiểm duyệt).", "Đã xóa bộ lọc");
+    toast.info("Đã đặt lại toàn bộ bộ lọc về mặc định.", "Đã xóa bộ lọc");
   };
 
   const handleRefresh = () => {
     setIsRefreshing(true);
     setActiveDropdown(null);
-    setTimeout(() => {
-      setIsRefreshing(false);
-      toast.success("Đã đồng bộ dữ liệu tin đăng mới nhất từ hệ thống.", "Làm mới thành công");
-    }, 350);
+    loadModerationQueue(true);
   };
 
-  const handleOpenDetail = (item: ModerationItem) => {
+  const handleOpenDetail = async (item: ModerationItem) => {
     setViewingItemId(item.id);
     setActiveImageIdx(0);
     setRejectModalOpen(false);
     setRejectReason(item.rejectionReason || "");
     window.scrollTo({ top: 0, behavior: "smooth" });
+
+    // Nếu là tin thật từ Backend và đang chờ duyệt, gọi GET /api/moderation/listings/{id} để lấy đúng bản mới nhất & ETag
+    if (item.backendTinId && item.status === "cho_kiem_duyet") {
+      try {
+        const { data } = await moderationService.getListingToModerate(item.backendTinId);
+        setItems((prev) =>
+          prev.map((entry) =>
+            entry.id === item.id ? mapDtoToModerationItem(data, entry) : entry
+          )
+        );
+      } catch (err: unknown) {
+        const apiErr = err as { status?: number; code?: string; message?: string };
+        if (apiErr.status === 409 || apiErr.code === "TRANG_THAI_KHONG_HOP_LE") {
+          toast.warning(
+            apiErr.message ||
+              "Tin đăng này vừa được Kiểm duyệt viên khác xử lý hoặc chủ tin đã xóa. Đang tải lại danh sách...",
+            "Trạng thái tin đã thay đổi"
+          );
+          setViewingItemId(null);
+          loadModerationQueue(false);
+        } else if (apiErr.status === 404 || apiErr.code === "KHONG_TIM_THAY") {
+          toast.error("Không tìm thấy tin đăng cần duyệt. Đang cập nhật danh sách...", "Không tìm thấy (404)");
+          setViewingItemId(null);
+          loadModerationQueue(false);
+        }
+      }
+    }
   };
 
   const handleBackToList = () => {
@@ -688,35 +639,83 @@ export function ModerationQueuePage() {
     setViewingItemId(null);
   };
 
-  const handleApprove = (item: ModerationItem) => {
-    const nowStr = "21/11/2026 19:35";
-    const reviewer = "KDV. Trần Minh Khoa";
-    setItems((prev) =>
-      prev.map((entry) => {
-        if (entry.id !== item.id) return entry;
-        const updatedHistory: VersionHistoryEntry[] = [
-          ...entry.versionHistory.filter((h) => h.attempt !== entry.versionNumber),
+  const currentReviewerName = user?.hoTen
+    ? `KDV. ${user.hoTen}`
+    : "KDV. Trần Minh Khoa";
+
+  const handleApprove = async (item: ModerationItem) => {
+    if (isSubmittingDecision) return;
+    setIsSubmittingDecision(true);
+
+    try {
+      let nextVersionCapNhat = item.phienBanCapNhat + 1;
+      if (item.backendTinId) {
+        const res = await moderationService.submitDecision(
+          item.backendTinId,
           {
-            attempt: entry.versionNumber,
-            decision: "da_duyet",
-            reviewerName: reviewer,
-            reviewedAt: nowStr,
+            phienBanDaXemId: item.phienBanHienTaiId,
+            quyetDinh: "phe_duyet",
           },
-        ];
-        return {
-          ...entry,
-          status: "da_duyet",
-          rejectionReason: undefined,
-          versionHistory: updatedHistory,
-          reviewedBy: reviewer,
-          reviewedAt: nowStr,
-        };
-      })
-    );
-    toast.success(
-      `Đã phê duyệt hiển thị tin ${item.id} (${item.versionId}). Tin đã được xuất bản công khai.`,
-      "Phê duyệt thành công"
-    );
+          { ifMatch: item.phienBanCapNhat }
+        );
+        nextVersionCapNhat = res.phienBanCapNhat;
+      }
+
+      const nowStr = formatInstantToViDateTime(new Date().toISOString());
+      setItems((prev) =>
+        prev.map((entry) => {
+          if (entry.id !== item.id) return entry;
+          const updatedHistory: VersionHistoryEntry[] = [
+            ...entry.versionHistory.filter((h) => h.attempt !== entry.versionNumber),
+            {
+              attempt: entry.versionNumber,
+              decision: "da_duyet",
+              reviewerName: currentReviewerName,
+              reviewedAt: nowStr,
+            },
+          ];
+          const approvedEntry: ModerationItem = {
+            ...entry,
+            status: "da_duyet",
+            phienBanCapNhat: nextVersionCapNhat,
+            rejectionReason: undefined,
+            versionHistory: updatedHistory,
+            reviewedBy: currentReviewerName,
+            reviewedAt: nowStr,
+          };
+          return approvedEntry;
+        })
+      );
+
+      toast.success(
+        `Đã phê duyệt hiển thị tin ${item.id} (${item.versionId}). Tin đã được xuất bản công khai.`,
+        "Phê duyệt thành công"
+      );
+    } catch (err: unknown) {
+      const apiErr = err as { status?: number; code?: string; message?: string };
+      if (apiErr.status === 412 || apiErr.code === "PHIEN_BAN_CU") {
+        toast.error(
+          apiErr.message ||
+            "Phiên bản tin đã thay đổi (có thể KDV khác vừa quyết định hoặc chủ tin vừa cập nhật). Vui lòng xem lại bản mới nhất.",
+          "Xung đột phiên bản (412)"
+        );
+        if (item.backendTinId) {
+          handleOpenDetail(item);
+        }
+      } else if (apiErr.status === 409 || apiErr.code === "TRANG_THAI_KHONG_HOP_LE") {
+        toast.error(
+          apiErr.message ||
+            "Tin không còn ở trạng thái chờ kiểm duyệt (đã được duyệt/từ chối hoặc chủ tin đã xóa).",
+          "Không thể phê duyệt (409)"
+        );
+        setViewingItemId(null);
+        loadModerationQueue(false);
+      } else {
+        toast.error(apiErr.message || "Không thể phê duyệt tin lúc này. Vui lòng thử lại.", "Lỗi hệ thống");
+      }
+    } finally {
+      setIsSubmittingDecision(false);
+    }
   };
 
   const handleOpenRejectDialog = (item: ModerationItem) => {
@@ -727,8 +726,8 @@ export function ModerationQueuePage() {
     }, 50);
   };
 
-  const handleConfirmReject = () => {
-    if (!viewingItem) return;
+  const handleConfirmReject = async () => {
+    if (!viewingItem || isSubmittingDecision) return;
     if (!rejectReason.trim()) {
       toast.error(
         "Vui lòng chọn hoặc nhập lý do từ chối chi tiết trước khi xác nhận.",
@@ -738,37 +737,80 @@ export function ModerationQueuePage() {
       return;
     }
 
-    const nowStr = "21/11/2026 19:35";
-    const reviewer = "KDV. Trần Minh Khoa";
+    setIsSubmittingDecision(true);
     const trimmedReason = rejectReason.trim();
-    setItems((prev) =>
-      prev.map((entry) => {
-        if (entry.id !== viewingItem.id) return entry;
-        const updatedHistory: VersionHistoryEntry[] = [
-          ...entry.versionHistory.filter((h) => h.attempt !== entry.versionNumber),
+
+    try {
+      let nextVersionCapNhat = viewingItem.phienBanCapNhat + 1;
+      if (viewingItem.backendTinId) {
+        const res = await moderationService.submitDecision(
+          viewingItem.backendTinId,
           {
-            attempt: entry.versionNumber,
-            decision: "bi_tu_choi",
-            reviewerName: reviewer,
-            reviewedAt: nowStr,
-            reason: trimmedReason,
+            phienBanDaXemId: viewingItem.phienBanHienTaiId,
+            quyetDinh: "tu_choi",
+            lyDo: trimmedReason,
           },
-        ];
-        return {
-          ...entry,
-          status: "bi_tu_choi",
-          rejectionReason: trimmedReason,
-          versionHistory: updatedHistory,
-          reviewedBy: reviewer,
-          reviewedAt: nowStr,
-        };
-      })
-    );
-    setRejectModalOpen(false);
-    toast.info(
-      `Đã từ chối tin ${viewingItem.id}. Lý do từ chối đã được gửi để chủ tin chỉnh sửa và nộp lại.`,
-      "Đã từ chối tin đăng"
-    );
+          { ifMatch: viewingItem.phienBanCapNhat }
+        );
+        nextVersionCapNhat = res.phienBanCapNhat;
+      }
+
+      const nowStr = formatInstantToViDateTime(new Date().toISOString());
+      setItems((prev) =>
+        prev.map((entry) => {
+          if (entry.id !== viewingItem.id) return entry;
+          const updatedHistory: VersionHistoryEntry[] = [
+            ...entry.versionHistory.filter((h) => h.attempt !== entry.versionNumber),
+            {
+              attempt: entry.versionNumber,
+              decision: "bi_tu_choi",
+              reviewerName: currentReviewerName,
+              reviewedAt: nowStr,
+              reason: trimmedReason,
+            },
+          ];
+          const rejectedEntry: ModerationItem = {
+            ...entry,
+            status: "bi_tu_choi",
+            phienBanCapNhat: nextVersionCapNhat,
+            rejectionReason: trimmedReason,
+            versionHistory: updatedHistory,
+            reviewedBy: currentReviewerName,
+            reviewedAt: nowStr,
+          };
+          return rejectedEntry;
+        })
+      );
+      setRejectModalOpen(false);
+      toast.info(
+        `Đã từ chối tin ${viewingItem.id}. Lý do từ chối đã được gửi để chủ tin chỉnh sửa và nộp lại.`,
+        "Đã từ chối tin đăng"
+      );
+    } catch (err: unknown) {
+      const apiErr = err as { status?: number; code?: string; message?: string };
+      if (apiErr.status === 412 || apiErr.code === "PHIEN_BAN_CU") {
+        setRejectModalOpen(false);
+        toast.error(
+          apiErr.message ||
+            "Phiên bản tin đã thay đổi bởi một phiên làm việc khác. Đang tải lại dữ liệu mới nhất...",
+          "Xung đột phiên bản (412)"
+        );
+        handleOpenDetail(viewingItem);
+      } else if (apiErr.status === 409 || apiErr.code === "TRANG_THAI_KHONG_HOP_LE") {
+        setRejectModalOpen(false);
+        toast.error(
+          apiErr.message ||
+            "Tin không còn ở trạng thái chờ kiểm duyệt (có thể đã được xử lý hoặc chủ tin đã xóa).",
+          "Không thể từ chối (409)"
+        );
+        setViewingItemId(null);
+        loadModerationQueue(false);
+      } else {
+        toast.error(apiErr.message || "Không thể gửi quyết định từ chối lúc này.", "Lỗi hệ thống");
+      }
+    } finally {
+      setIsSubmittingDecision(false);
+    }
   };
 
   // ============================================================================
@@ -789,6 +831,7 @@ export function ModerationQueuePage() {
           <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
             <button type="button" className="kdv-back-btn" onClick={handleBackToList}>
               <ArrowLeftIcon />
+              Quay lại danh sách tin đăng
             </button>
             <div>
               <div style={{ fontSize: "0.76rem", fontWeight: 700, color: "#14775d", letterSpacing: "0.03em" }}>
@@ -818,7 +861,7 @@ export function ModerationQueuePage() {
           </div>
         </div>
 
-        {/* Bố cục: Nếu đang chờ duyệt thì hiện 2 cột (có cột Quyết định bên phải); nếu Đã duyệt / Đã từ chối thì ẩn phần Quyết định bên phải và mở rộng toàn chiều ngang */}
+        {/* Bố cục: Nếu đang chờ duyệt thì hiện 2 cột; nếu Đã duyệt / Đã từ chối thì ẩn cột Quyết định bên phải */}
         <div
           className="kdv-detail-layout"
           style={isPendingModeration ? undefined : { gridTemplateColumns: "1fr" }}
@@ -865,7 +908,7 @@ export function ModerationQueuePage() {
               </div>
             </div>
 
-            {/* 2. Thông tin chi tiết tin đăng (Khớp với form đăng tin của người dùng) */}
+            {/* 2. Thông tin chi tiết tin đăng */}
             <div className="staff-card" style={{ marginBottom: 0 }}>
               <div className="staff-card-header">
                 <div>
@@ -880,12 +923,14 @@ export function ModerationQueuePage() {
                 <div className="kdv-info-grid">
                   <div className="kdv-info-box">
                     <div className="kdv-info-box-label">
-                      {viewingItem.transactionType === "cho_thue" ? "Giá cho thuê" : "Giá bán niêm yết"}
+                      {viewingItem.transactionType === "cho_thue" ? "Giá cho thuê gốc" : "Giá bán niêm yết gốc"}
                     </div>
                     <div className="kdv-info-box-value highlight">{viewingItem.priceDisplay}</div>
-                    <div style={{ fontSize: "0.76rem", color: "#64748b", marginTop: "3px" }}>
-                      Thành tiền: {viewingItem.rawPriceVnd}
-                    </div>
+                    {viewingItem.convertedPriceDisplay && (
+                      <div style={{ fontSize: "0.76rem", color: "#64748b", marginTop: "3px" }}>
+                        Quy đổi tổng: <strong>{viewingItem.convertedPriceDisplay}</strong>
+                      </div>
+                    )}
                   </div>
 
                   <div className="kdv-info-box">
@@ -910,11 +955,10 @@ export function ModerationQueuePage() {
                   <div className="kdv-info-box" style={{ gridColumn: "span 2" }}>
                     <div className="kdv-info-box-label">Vị trí & Địa chỉ</div>
                     <div className="kdv-info-box-value">
-                      {viewingItem.streetAddress}, {viewingItem.ward}, {viewingItem.province}
+                      {viewingItem.streetAddress}
                     </div>
                     <div style={{ fontSize: "0.77rem", color: "#64748b", marginTop: "4px" }}>
-                      Tỉnh/Thành phố: <strong>{viewingItem.province}</strong> • Phường/Xã:{" "}
-                      <strong>{viewingItem.ward}</strong>
+                      Khu vực: <strong>{viewingItem.ward !== viewingItem.province ? `${viewingItem.ward}, ${viewingItem.province}` : viewingItem.province}</strong>
                     </div>
                   </div>
 
@@ -1091,15 +1135,17 @@ export function ModerationQueuePage() {
                       type="button"
                       className="staff-btn staff-btn-success"
                       style={{ width: "100%", padding: "0.75rem 1rem", fontSize: "0.9rem" }}
+                      disabled={isSubmittingDecision}
                       onClick={() => handleApprove(viewingItem)}
                     >
-                      ✓ Phê duyệt hiển thị công khai
+                      {isSubmittingDecision ? "Đang xử lý..." : "✓ Phê duyệt hiển thị công khai"}
                     </button>
 
                     <button
                       type="button"
                       className="staff-btn staff-btn-danger"
                       style={{ width: "100%", padding: "0.7rem 1rem", fontSize: "0.88rem" }}
+                      disabled={isSubmittingDecision}
                       onClick={() => handleOpenRejectDialog(viewingItem)}
                     >
                       ✕ Từ chối & Yêu cầu chỉnh sửa
@@ -1162,7 +1208,7 @@ export function ModerationQueuePage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="reject-dialog-title"
-            onClick={() => setRejectModalOpen(false)}
+            onClick={() => !isSubmittingDecision && setRejectModalOpen(false)}
           >
             <div className="staff-modal" onClick={(e) => e.stopPropagation()}>
               <div className="staff-modal-header">
@@ -1170,6 +1216,7 @@ export function ModerationQueuePage() {
                 <button
                   type="button"
                   className="staff-btn staff-btn-outline staff-btn-sm"
+                  disabled={isSubmittingDecision}
                   onClick={() => setRejectModalOpen(false)}
                 >
                   Đóng
@@ -1228,6 +1275,7 @@ export function ModerationQueuePage() {
                 <button
                   type="button"
                   className="staff-btn staff-btn-outline"
+                  disabled={isSubmittingDecision}
                   onClick={() => setRejectModalOpen(false)}
                 >
                   Hủy
@@ -1235,9 +1283,10 @@ export function ModerationQueuePage() {
                 <button
                   type="button"
                   className="staff-btn staff-btn-danger"
+                  disabled={isSubmittingDecision}
                   onClick={handleConfirmReject}
                 >
-                  Xác nhận
+                  {isSubmittingDecision ? "Đang gửi..." : "Xác nhận"}
                 </button>
               </div>
             </div>
@@ -1250,8 +1299,6 @@ export function ModerationQueuePage() {
   // ============================================================================
   // GIAO DIỆN 2: MÀN HÌNH DANH SÁCH TIN ĐĂNG (RỘNG NGANG TOÀN MÀN HÌNH)
   // ============================================================================
-  const currentStatusLabel =
-    STATUS_OPTIONS.find((o) => o.value === filterStatus)?.label || "Chờ kiểm duyệt";
   const currentSubmissionLabel =
     SUBMISSION_OPTIONS.find((o) => o.value === filterSubmission)?.label || "Tất cả nguồn nộp";
   const currentCategoryLabel =
@@ -1288,41 +1335,7 @@ export function ModerationQueuePage() {
           </div>
         </div>
 
-        {/* 2. Bộ lọc Trạng thái thẩm định */}
-        <div className="kdv-dropdown-field">
-          <span className="kdv-filter-label">Trạng thái thẩm định</span>
-          <button
-            type="button"
-            className={`kdv-dropdown-btn ${activeDropdown === "status" ? "active" : ""}`}
-            onClick={() => setActiveDropdown(activeDropdown === "status" ? null : "status")}
-            aria-expanded={activeDropdown === "status"}
-          >
-            <span className="kdv-dropdown-btn-text">{currentStatusLabel}</span>
-            <ChevronIcon />
-          </button>
-          {activeDropdown === "status" && (
-            <div className="kdv-dropdown-menu" role="listbox" aria-label="Trạng thái thẩm định">
-              <div className="kdv-dropdown-options">
-                {STATUS_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`kdv-dropdown-option ${filterStatus === opt.value ? "active" : ""}`}
-                    onClick={() => {
-                      setFilterStatus(opt.value);
-                      setActiveDropdown(null);
-                    }}
-                  >
-                    <span>{opt.label}</span>
-                    {filterStatus === opt.value && <span>✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 3. Bộ lọc Nguồn gửi duyệt */}
+        {/* 2. Bộ lọc Nguồn gửi duyệt */}
         <div className="kdv-dropdown-field">
           <span className="kdv-filter-label">Nguồn gửi duyệt</span>
           <button
@@ -1590,9 +1603,10 @@ export function ModerationQueuePage() {
             type="button"
             className="kdv-filter-action-btn refresh-btn"
             onClick={handleRefresh}
+            disabled={isRefreshing || isLoadingQueue}
             title="Lấy dữ liệu tin đăng mới nhất"
           >
-            <RefreshIcon spinning={isRefreshing} />
+            <RefreshIcon spinning={isRefreshing || isLoadingQueue} />
             Làm mới
           </button>
         </div>
@@ -1605,9 +1619,6 @@ export function ModerationQueuePage() {
             <h3 className="staff-card-title">
               Danh sách tin đăng ({filteredAndSortedItems.length})
             </h3>
-            <p className="staff-card-subtitle">
-              Sắp xếp ưu tiên: Chờ kiểm duyệt (mới nhất → cũ nhất) → Đã từ chối (mới nhất → cũ nhất) → Đã phê duyệt (mới nhất → cũ nhất)
-            </p>
           </div>
         </div>
 
@@ -1627,7 +1638,9 @@ export function ModerationQueuePage() {
               {filteredAndSortedItems.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    <div style={{ fontWeight: 700, color: "#0f3d32" }}>{item.id}</div>
+                    <div style={{ fontWeight: 700, color: "#0f3d32" }}>
+                      {item.id.length > 18 ? `${item.id.slice(0, 8)}...` : item.id}
+                    </div>
                     <div style={{ fontSize: "0.74rem", color: "#64748b" }}>
                       {item.versionId} (Lần gửi {item.versionNumber})
                     </div>
@@ -1638,7 +1651,7 @@ export function ModerationQueuePage() {
                     </div>
                     <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: "3px" }}>
                       <span style={{ color: "#14775d", fontWeight: 600 }}>{item.category}</span> •{" "}
-                      <strong>{item.priceDisplay}</strong> • {item.areaSize} • Chủ tin: {item.ownerName}
+                      <strong>{item.priceDisplay}</strong> • {item.areaSize}
                     </div>
                   </td>
                   <td>
@@ -1691,7 +1704,9 @@ export function ModerationQueuePage() {
               {filteredAndSortedItems.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: "center", padding: "2.5rem", color: "#64748b" }}>
-                    Không có tin đăng nào khớp với điều kiện lọc hiện tại.
+                    {isLoadingQueue
+                      ? "Đang tải danh sách tin đăng từ hệ thống..."
+                      : "Không có tin đăng nào khớp với điều kiện lọc hiện tại."}
                   </td>
                 </tr>
               )}
