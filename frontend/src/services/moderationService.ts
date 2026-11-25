@@ -20,6 +20,39 @@ function generateIdempotencyKey(): string {
     : `mod-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
+const decisionIdempotencyKeys = new Map<string, string>();
+
+function buildDecisionIntentSignature(
+  listingId: string,
+  ifMatchHeader: string,
+  cleanBody: Record<string, string>
+): string {
+  return JSON.stringify({
+    listingId,
+    ifMatch: ifMatchHeader,
+    phienBanDaXemId: cleanBody.phienBanDaXemId,
+    quyetDinh: cleanBody.quyetDinh,
+    lyDo: cleanBody.quyetDinh === "tu_choi" ? cleanBody.lyDo ?? "" : null,
+  });
+}
+
+function getOrCreateDecisionIdempotencyKey(
+  signature: string,
+  explicitKey?: string
+): string {
+  if (explicitKey) {
+    decisionIdempotencyKeys.set(signature, explicitKey);
+    return explicitKey;
+  }
+  const existingKey = decisionIdempotencyKeys.get(signature);
+  if (existingKey) {
+    return existingKey;
+  }
+  const newKey = generateIdempotencyKey();
+  decisionIdempotencyKeys.set(signature, newKey);
+  return newKey;
+}
+
 /**
  * Service kết nối 3 API Kiểm duyệt tin đăng của KDV theo openapi-sprint-1.yaml (FR-07 / UC-13):
  * 1. GET /api/moderation/listings (layDanhSachChoDuyet)
@@ -67,7 +100,6 @@ export const moderationService = {
     }
   ): Promise<TinGhiKetQuaDto> {
     const ifMatchHeader = formatStrongETag(options.ifMatch);
-    const idempotencyKey = options.idempotencyKey || generateIdempotencyKey();
 
     const cleanBody: Record<string, string> = {
       phienBanDaXemId: payload.phienBanDaXemId,
@@ -76,6 +108,16 @@ export const moderationService = {
     if (payload.quyetDinh === "tu_choi" && payload.lyDo !== undefined) {
       cleanBody.lyDo = payload.lyDo;
     }
+
+    const intentSignature = buildDecisionIntentSignature(
+      listingId,
+      ifMatchHeader,
+      cleanBody
+    );
+    const idempotencyKey = getOrCreateDecisionIdempotencyKey(
+      intentSignature,
+      options.idempotencyKey
+    );
 
     const response = await api.post<TinGhiKetQuaDto>(
       `/moderation/listings/${listingId}/decision`,

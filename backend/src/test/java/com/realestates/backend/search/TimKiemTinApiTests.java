@@ -177,6 +177,12 @@ class TimKiemTinApiTests {
         assertThat(b.sapXep()).isEqualTo(SapXepTin.MOI_NHAT);
         assertThat(b.trang()).isEqualTo(3);
         assertThat(b.kichThuoc()).isEqualTo(50);
+
+        mockMvc.perform(get("/api/listings").param("tuKhoa", "TP.HCM")).andExpect(status().isOk());
+        assertThat(khoGia.boLocCuoi.tuKhoa()).containsExactly("tp", "hcm");
+
+        mockMvc.perform(get("/api/listings").param("tuKhoa", "tp hcm")).andExpect(status().isOk());
+        assertThat(khoGia.boLocCuoi.tuKhoa()).containsExactly("tp", "hcm");
     }
 
     @Test

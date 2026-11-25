@@ -172,6 +172,16 @@ class PostgreSqlTimKiemTinTests {
     }
 
     @Test
+    @DisplayName("M08: chuẩn hóa dấu câu giống nhau ở từ khóa và trường tạo vector (tiêu đề 'Căn hộ tại TP.HCM' khớp cả 'TP.HCM' và 'tp hcm')")
+    void tuKhoaChuanHoaDauCauGiongVector() {
+        TinTao tphcm = ht.taoTinDaDuyet(mau().voiTieuDe("Căn hộ tại TP.HCM"), GOC.plusSeconds(1));
+        ht.taoTinDaDuyet(mau().voiTieuDe("Căn hộ tại Hà Nội"), GOC.plusSeconds(2));
+
+        assertThat(ids(tim("tuKhoa", "TP.HCM").tuNhien().noiDung())).containsExactly(tphcm.tinId());
+        assertThat(ids(tim("tuKhoa", "tp hcm").tuNhien().noiDung())).containsExactly(tphcm.tinId());
+    }
+
+    @Test
     @DisplayName("khuVuc: chuỗi con không dấu/hoa thường trong khu_vuc nối dia_chi; mac_dinh không từ khóa xếp ngày đăng giảm")
     void khuVucChuoiCon() {
         TinTao cu = ht.taoTinDaDuyet(mau(), GOC.plusSeconds(1));

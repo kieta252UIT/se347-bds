@@ -408,15 +408,14 @@ export function SearchPage() {
 
   const pageSize = 8;
 
-  // Đồng bộ danh sách yêu thích từ GET /api/me/favorites khi đã đăng nhập
+  // Đồng bộ đầy đủ danh sách yêu thích (kể cả ngoài 50 mục đầu - M14) từ GET /api/me/favorites khi đã đăng nhập
   useEffect(() => {
     if (!isAuthenticated) return;
     let active = true;
     favoriteService
-      .getFavorites(0, 50)
-      .then((res) => {
+      .getAllFavoriteIds()
+      .then((ids) => {
         if (!active) return;
-        const ids = res.noiDung.map((item) => item.id);
         setFavorites((prev) => {
           const demoNumeric = prev.filter((id) => typeof id === "number");
           return [...demoNumeric, ...ids];

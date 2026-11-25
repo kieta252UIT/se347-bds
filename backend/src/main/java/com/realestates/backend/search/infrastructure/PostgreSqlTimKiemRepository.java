@@ -29,10 +29,10 @@ import org.springframework.stereotype.Repository;
 public class PostgreSqlTimKiemRepository implements TimKiemRepository {
 
     private static final String VECTOR_TIM_KIEM =
-            "setweight(to_tsvector('simple', " + ChuanHoaTimKiem.sql("p.tieu_de") + "), 'A')"
+            "setweight(to_tsvector('simple', " + ChuanHoaTimKiem.sqlKhuVuc("p.tieu_de") + "), 'A')"
                     + " || setweight(to_tsvector('simple', "
-                    + ChuanHoaTimKiem.sql("p.khu_vuc || ' ' || p.dia_chi") + "), 'B')"
-                    + " || setweight(to_tsvector('simple', " + ChuanHoaTimKiem.sql("p.mo_ta") + "), 'C')";
+                    + ChuanHoaTimKiem.sqlKhuVuc("p.khu_vuc || ' ' || p.dia_chi") + "), 'B')"
+                    + " || setweight(to_tsvector('simple', " + ChuanHoaTimKiem.sqlKhuVuc("p.mo_ta") + "), 'C')";
 
     private static final String COT_TIN = """
             tin_id, phien_ban_id, tieu_de, loai_giao_dich, loai_bds, gia_goc, don_vi_gia, dien_tich_m2,

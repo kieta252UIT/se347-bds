@@ -253,15 +253,15 @@ export function PropertyDetailPage() {
     };
   }, [id, location.state, user?.hoTen, user?.soDienThoai]);
 
-  // Kiểm tra trạng thái đã lưu trong danh sách yêu thích
+  // Kiểm tra trạng thái đã lưu trong danh sách yêu thích (đọc đủ các trang ngoài 50 mục đầu - M14)
   useEffect(() => {
     if (!isAuthenticated || !id || /^\d+$/.test(id)) return;
     let active = true;
     favoriteService
-      .getFavorites(0, 50)
-      .then((pageData) => {
+      .getAllFavoriteIds()
+      .then((favoriteIds) => {
         if (!active) return;
-        setIsFavorite(pageData.noiDung.some((item) => item.id === id));
+        setIsFavorite(favoriteIds.includes(id));
       })
       .catch(() => {
         // Bỏ qua lỗi phụ

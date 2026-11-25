@@ -388,6 +388,9 @@ export function ModerationQueuePage() {
   const [items, setItems] = useState<ModerationItem[]>([]);
   const [isLoadingQueue, setIsLoadingQueue] = useState(true);
   const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
+  const [totalPendingCount, setTotalPendingCount] = useState(0);
 
   // Bộ lọc
   const [searchQuery, setSearchQuery] = useState("");
@@ -413,56 +416,98 @@ export function ModerationQueuePage() {
   const filterBarRef = useRef<HTMLDivElement>(null);
   const rejectTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const loadModerationQueue = useCallback(async (showToast = false) => {
-    setIsLoadingQueue(true);
-    try {
-      localStorage.removeItem(LEGACY_KDV_STORAGE_KEY);
-    } catch {
-      // Bỏ qua
-    }
-    try {
-      const pageData = await moderationService.getPendingListings(0, 50);
-      if (pageData && Array.isArray(pageData.noiDung)) {
-        setItems((prev) => {
-          const prevById = new Map<string, ModerationItem>();
-          for (const p of prev) prevById.set(p.id, p);
-
-          return pageData.noiDung.map((dto) =>
-            mapDtoToModerationItem(dto, prevById.get(dto.id))
-          );
-        });
-
-        const openId = searchParams.get("openId");
-        if (openId) {
-          setViewingItemId(openId);
-          const nextParams = new URLSearchParams(searchParams);
-          nextParams.delete("openId");
-          setSearchParams(nextParams, { replace: true });
-        }
-
-        if (showToast) {
-          toast.success(
-            `Đã đồng bộ danh sách kiểm duyệt (${pageData.tongSo} tin đang chờ).`,
-            "Làm mới thành công"
-          );
-        }
+  const loadModerationQueue = useCallback(
+    async (showToast = false, targetPage = currentPage, targetPageSize = pageSize) => {
+      setIsLoadingQueue(true);
+      try {
+        localStorage.removeItem(LEGACY_KDV_STORAGE_KEY);
+      } catch {
+        // Bỏ qua
       }
-    } catch {
-      if (showToast) {
-        toast.info(
-          "Đang hiển thị danh sách mẫu (máy chủ kiểm duyệt chưa phản hồi hoặc đang ở chế độ in-memory).",
-          "Đã làm mới danh sách"
+      try {
+        let effectivePage = Math.max(0, targetPage);
+        let pageData = await moderationService.getPendingListings(
+          effectivePage,
+          targetPageSize
         );
+        const total = Number(pageData?.tongSo ?? pageData?.noiDung?.length ?? 0);
+
+        if (
+          pageData &&
+          Array.isArray(pageData.noiDung) &&
+          pageData.noiDung.length === 0 &&
+          effectivePage > 0 &&
+          total > 0
+        ) {
+          effectivePage = Math.max(0, Math.ceil(total / targetPageSize) - 1);
+          pageData = await moderationService.getPendingListings(
+            effectivePage,
+            targetPageSize
+          );
+        }
+
+        if (pageData && Array.isArray(pageData.noiDung)) {
+          const finalTotal = Number(pageData.tongSo ?? pageData.noiDung.length);
+          setCurrentPage(effectivePage);
+          setTotalPendingCount(finalTotal);
+
+          let mappedItems: ModerationItem[] = [];
+          setItems((prev) => {
+            const prevById = new Map<string, ModerationItem>();
+            for (const p of prev) prevById.set(p.id, p);
+
+            mappedItems = pageData.noiDung.map((dto) =>
+              mapDtoToModerationItem(dto, prevById.get(dto.id))
+            );
+            return mappedItems;
+          });
+
+          const openId = searchParams.get("openId");
+          if (openId) {
+            setViewingItemId(openId);
+            const nextParams = new URLSearchParams(searchParams);
+            nextParams.delete("openId");
+            setSearchParams(nextParams, { replace: true });
+
+            if (!pageData.noiDung.some((dto) => dto.id === openId)) {
+              try {
+                const { data } = await moderationService.getListingToModerate(openId);
+                setItems((prev) =>
+                  prev.some((entry) => entry.id === data.id)
+                    ? prev
+                    : [mapDtoToModerationItem(data), ...prev]
+                );
+              } catch {
+                // Nếu tin không còn ở trạng thái chờ duyệt thì bỏ qua
+              }
+            }
+          }
+
+          if (showToast) {
+            toast.success(
+              `Đã đồng bộ danh sách kiểm duyệt (${finalTotal} tin đang chờ, trang ${effectivePage + 1}).`,
+              "Làm mới thành công"
+            );
+          }
+        }
+      } catch {
+        if (showToast) {
+          toast.info(
+            "Không thể đồng bộ hàng chờ kiểm duyệt lúc này. Vui lòng thử lại.",
+            "Làm mới danh sách"
+          );
+        }
+      } finally {
+        setIsLoadingQueue(false);
+        setIsRefreshing(false);
       }
-    } finally {
-      setIsLoadingQueue(false);
-      setIsRefreshing(false);
-    }
-  }, [searchParams, setSearchParams]);
+    },
+    [currentPage, pageSize, searchParams, setSearchParams]
+  );
 
   useEffect(() => {
-    loadModerationQueue(false);
-  }, [loadModerationQueue]);
+    loadModerationQueue(false, currentPage, pageSize);
+  }, [currentPage, pageSize, loadModerationQueue]);
 
   // Đóng dropdown khi click ra ngoài
   useEffect(() => {
@@ -1614,11 +1659,35 @@ export function ModerationQueuePage() {
 
       {/* BẢNG DANH SÁCH TIN ĐĂNG (RỘNG NGANG TOÀN MÀN HÌNH) */}
       <div className="staff-card">
-        <div className="staff-card-header">
+        <div className="staff-card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
           <div>
             <h3 className="staff-card-title">
-              Danh sách tin đăng ({filteredAndSortedItems.length})
+              Danh sách tin đăng trên trang ({filteredAndSortedItems.length} / Tổng hàng chờ: {totalPendingCount})
             </h3>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.82rem", color: "#475569" }}>
+            <label htmlFor="kdv-page-size">Kích thước trang:</label>
+            <select
+              id="kdv-page-size"
+              value={pageSize}
+              onChange={(e) => {
+                const nextSize = Number(e.target.value) || 50;
+                setCurrentPage(0);
+                setPageSize(nextSize);
+              }}
+              style={{
+                border: "1px solid #cbd5e1",
+                borderRadius: "6px",
+                padding: "4px 8px",
+                fontSize: "0.82rem",
+                backgroundColor: "#fff",
+                color: "#0f172a",
+                fontWeight: 600,
+              }}
+            >
+              <option value={20}>20 tin / trang</option>
+              <option value={50}>50 tin / trang</option>
+            </select>
           </div>
         </div>
 
@@ -1713,6 +1782,84 @@ export function ModerationQueuePage() {
             </tbody>
           </table>
         </div>
+
+        {/* THANH PHÂN TRANG HÀNG CHỜ KIỂM DUYỆT (M07) */}
+        {(() => {
+          const totalPages = Math.max(1, Math.ceil(totalPendingCount / pageSize));
+          const startIdx = totalPendingCount === 0 ? 0 : currentPage * pageSize + 1;
+          const endIdx = Math.min(totalPendingCount, currentPage * pageSize + items.length);
+
+          return (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "0.75rem",
+                padding: "0.9rem 1.25rem",
+                borderTop: "1px solid #e2e8f0",
+                backgroundColor: "#f8fafc",
+              }}
+            >
+              <div style={{ fontSize: "0.83rem", color: "#475569" }}>
+                Hiển thị <strong>{startIdx}–{endIdx}</strong> trong tổng số{" "}
+                <strong>{totalPendingCount}</strong> tin chờ kiểm duyệt (Trang{" "}
+                <strong>{currentPage + 1}</strong> / <strong>{totalPages}</strong>)
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="staff-btn staff-btn-outline staff-btn-sm"
+                  disabled={currentPage <= 0 || isLoadingQueue}
+                  onClick={() => setCurrentPage((prev) => Math.max(0, prev - 1))}
+                >
+                  ‹ Trang trước
+                </button>
+
+                {Array.from({ length: totalPages }, (_, idx) => idx)
+                  .filter(
+                    (idx) =>
+                      idx === 0 ||
+                      idx === totalPages - 1 ||
+                      Math.abs(idx - currentPage) <= 2
+                  )
+                  .map((pageIdx) => (
+                    <button
+                      key={pageIdx}
+                      type="button"
+                      className={`staff-btn staff-btn-sm ${
+                        pageIdx === currentPage
+                          ? "staff-btn-primary"
+                          : "staff-btn-outline"
+                      }`}
+                      style={
+                        pageIdx === currentPage
+                          ? { backgroundColor: "#14775d", minWidth: "34px" }
+                          : { minWidth: "34px" }
+                      }
+                      disabled={isLoadingQueue}
+                      onClick={() => setCurrentPage(pageIdx)}
+                    >
+                      {pageIdx + 1}
+                    </button>
+                  ))}
+
+                <button
+                  type="button"
+                  className="staff-btn staff-btn-outline staff-btn-sm"
+                  disabled={currentPage + 1 >= totalPages || isLoadingQueue}
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1))
+                  }
+                >
+                  Trang sau ›
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
