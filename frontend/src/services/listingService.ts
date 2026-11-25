@@ -154,65 +154,48 @@ export const listingService = {
   },
 
   /**
-   * Helper quản lý danh sách tin của người dùng trong kho cục bộ (Local Sync)
-   * Giúp đồng bộ tức thì các tin vừa tạo/sửa/xóa thành công
+   * Dọn sạch dữ liệu cũ từng lưu trong localStorage (không còn sử dụng localStorage cho danh sách tin)
    */
   getUserCreatedListings(): MyListingItem[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_MY_LISTINGS);
-      return raw ? JSON.parse(raw) : [];
+      localStorage.removeItem(STORAGE_KEY_MY_LISTINGS);
     } catch {
-      return [];
+      // bỏ qua
     }
+    return [];
   },
 
   saveUserListing(item: MyListingItem): void {
+    void item;
     try {
-      const list = this.getUserCreatedListings();
-      const existingIdx = list.findIndex((x) => String(x.id) === String(item.id));
-      if (existingIdx >= 0) {
-        list[existingIdx] = { ...list[existingIdx], ...item };
-      } else {
-        list.unshift(item);
-      }
-      localStorage.setItem(STORAGE_KEY_MY_LISTINGS, JSON.stringify(list));
+      localStorage.removeItem(STORAGE_KEY_MY_LISTINGS);
     } catch {
-      // bỏ qua lỗi nếu localStorage bị chặn
+      // bỏ qua
     }
   },
 
   removeUserListing(id: string | number): void {
+    void id;
     try {
-      const list = this.getUserCreatedListings();
-      const updated = list.map((x) =>
-        String(x.id) === String(id) ? { ...x, status: "deleted" as const } : x
-      );
-      localStorage.setItem(STORAGE_KEY_MY_LISTINGS, JSON.stringify(updated));
+      localStorage.removeItem(STORAGE_KEY_MY_LISTINGS);
     } catch {
-      // bỏ qua lỗi nếu localStorage bị chặn
+      // bỏ qua
     }
   },
 
   updateUserListingStatus(id: string | number, status: MyListingItem["status"]): void {
+    void id;
+    void status;
     try {
-      const list = this.getUserCreatedListings();
-      const updated = list.map((x) =>
-        String(x.id) === String(id) ? { ...x, status } : x
-      );
-      localStorage.setItem(STORAGE_KEY_MY_LISTINGS, JSON.stringify(updated));
+      localStorage.removeItem(STORAGE_KEY_MY_LISTINGS);
     } catch {
-      // bỏ qua lỗi nếu localStorage bị chặn
+      // bỏ qua
     }
   },
 
-  /**
-   * Lấy danh sách tin tổng hợp (tin thực tế của user + dữ liệu mẫu)
-   */
   getMyListings(fallbackMock: MyListingItem[] = []): MyListingItem[] {
-    const userListings = this.getUserCreatedListings().filter((x) => x.status !== "deleted");
-    const userIds = new Set(userListings.map((x) => String(x.id)));
-    const filteredMock = fallbackMock.filter((x) => !userIds.has(String(x.id)));
-    return [...userListings, ...filteredMock];
+    this.getUserCreatedListings();
+    return fallbackMock;
   },
 
   /**
@@ -299,17 +282,11 @@ export const listingService = {
           };
         });
 
-        // Hợp nhất với các tin vừa tạo/sửa gần nhất trong local storage (nếu chưa kịp xuất hiện trong server)
-        const localItems = this.getUserCreatedListings().filter((x) => x.status !== "deleted");
-        const serverIds = new Set(serverItems.map((x) => String(x.id)));
-        const newLocalOnly = localItems.filter((x) => !serverIds.has(String(x.id)));
-
-        return [...serverItems, ...newLocalOnly];
+        return serverItems.filter((x) => x.status !== "deleted");
       }
-      return this.getUserCreatedListings().filter((x) => x.status !== "deleted");
+      return [];
     } catch {
-      // Fallback về local storage nếu mạng lỗi hoặc backend chưa bật
-      return this.getUserCreatedListings().filter((x) => x.status !== "deleted");
+      return [];
     }
   },
 };

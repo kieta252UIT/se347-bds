@@ -1,20 +1,24 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 export interface PropertyItem {
-  id: number;
+  id: string | number;
   title: string;
   price: string;
+  convertedPrice?: string | null;
   priceValue: number;
   place: string;
-  size: number;
-  beds: number;
-  baths: number;
+  size: number | string;
+  beds?: number;
+  baths?: number;
   image: string;
   tag?: string;
   city?: string;
   ward?: string;
   type?: string;
   transaction?: string;
+  lat?: number;
+  lng?: number;
+  postedAt?: string;
 }
 
 export interface PropertyCardProps {
@@ -22,7 +26,7 @@ export interface PropertyCardProps {
   tag?: string;
   isSponsored?: boolean;
   isFavorite?: boolean;
-  onToggleFavorite?: (id: number) => void;
+  onToggleFavorite?: (id: string | number) => void;
   className?: string;
 }
 
@@ -34,16 +38,48 @@ export function PropertyCard({
   onToggleFavorite,
   className = "",
 }: PropertyCardProps) {
+  const navigate = useNavigate();
   const displayTag = tag ?? property.tag;
+  const detailUrl = `/tin-dang/${property.id}`;
+
+  const handleCardClick = () => {
+    navigate(detailUrl);
+  };
 
   return (
-    <article className={`sp-property ${className}`.trim()}>
+    <article
+      className={`sp-property ${className}`.trim()}
+      onClick={handleCardClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleCardClick();
+        }
+      }}
+      role="link"
+      tabIndex={0}
+      style={{ cursor: "pointer" }}
+    >
       <div
         className="sp-property-image"
         style={{ backgroundImage: `url("${property.image}")` }}
       >
+        <img
+          src={property.image}
+          alt={property.title}
+          loading="lazy"
+          style={{
+            position: "absolute",
+            width: "1px",
+            height: "1px",
+            opacity: 0,
+            pointerEvents: "none",
+          }}
+        />
         {isSponsored ? (
-          <span className="sp-sponsored-tag">{displayTag || "Được tài trợ"}</span>
+          <span className="sp-sponsored-tag">
+            {displayTag || "Được tài trợ"}
+          </span>
         ) : (
           displayTag && <span className="sp-property-tag">{displayTag}</span>
         )}
@@ -76,10 +112,21 @@ export function PropertyCard({
       </div>
 
       <div className="sp-property-body">
-        <strong className="sp-price">{property.price}</strong>
+        <div className="sp-price-block">
+          <strong className="sp-price">{property.price}</strong>
+          {property.convertedPrice && (
+            <span
+              className="sp-converted-price"
+              title="Giá quy đổi tham chiếu"
+            >
+              Quy đổi tham chiếu: ≈ {property.convertedPrice}
+            </span>
+          )}
+        </div>
         <h3>
           <Link
-            to={`/tin-dang/${property.id}`}
+            to={detailUrl}
+            onClick={(e) => e.stopPropagation()}
             style={{ color: "inherit", textDecoration: "none" }}
           >
             {property.title}
@@ -115,22 +162,44 @@ export function PropertyCard({
             </svg>
             {property.size} {typeof property.size === "number" ? "m²" : ""}
           </span>
-          <span>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 17v-6h18v6M5 17v2M19 17v2M3 14h18" />
-              <path d="M5 11V8h5a3 3 0 0 1 3 3" />
-            </svg>
-            {property.beds} {typeof property.beds === "number" ? "phòng ngủ" : ""}
-          </span>
-          {property.baths !== undefined && (
+
+          {property.type && (
+            <span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m3 11 9-7 9 7" />
+                <path d="M5 10v10h14V10M9 20v-6h6v6" />
+              </svg>
+              {property.type}
+            </span>
+          )}
+
+          {property.beds !== undefined && property.beds > 0 && (
+            <span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 17v-6h18v6M5 17v2M19 17v2M3 14h18" />
+                <path d="M5 11V8h5a3 3 0 0 1 3 3" />
+              </svg>
+              {property.beds} phòng ngủ
+            </span>
+          )}
+
+          {property.baths !== undefined && property.baths > 0 && (
             <span>
               <svg
                 viewBox="0 0 24 24"
@@ -144,7 +213,7 @@ export function PropertyCard({
                 <path d="M4 12h16v4a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-4Z" />
                 <path d="M6 12V6a2 2 0 0 1 4 0v1M4 20v1m16-1v1" />
               </svg>
-              {property.baths} {typeof property.baths === "number" ? "phòng tắm" : ""}
+              {property.baths} phòng tắm
             </span>
           )}
         </div>

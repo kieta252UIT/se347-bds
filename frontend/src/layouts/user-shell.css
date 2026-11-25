@@ -99,11 +99,229 @@
   gap: 12px;
 }
 
-.hf-signed-in-label {
-  color: #517064;
-  font-size: 13px;
-  font-weight: 600;
+.hf-user-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hf-dropdown-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.hf-notif-btn {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: #1f2937;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.hf-notif-btn:hover,
+.hf-notif-btn.active {
+  background: #f1f5f3;
+  color: var(--green);
+}
+
+.hf-notif-btn svg {
+  width: 21px;
+  height: 21px;
+}
+
+.hf-avatar-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid #e2e8e5;
+  background: #eceef1;
+  color: #111827;
+  display: grid;
+  place-items: center;
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.hf-avatar-btn:hover,
+.hf-avatar-btn.active {
+  border-color: #b7d7cc;
+  background: #e4ede9;
+  box-shadow: 0 0 0 3px rgb(20 119 93 / 12%);
+}
+
+/* Menu xổ xuống của Avatar & Thông báo */
+.hf-user-menu,
+.hf-notif-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 60;
+  width: 256px;
+  border: 1px solid #dfe5e2;
+  border-radius: 16px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 18px 38px rgb(15 35 28 / 13%);
+}
+
+.hf-user-menu-header,
+.hf-notif-header {
+  background: #f1f2f5;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e5e8ec;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hf-notif-empty {
+  padding: 22px 18px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.hf-user-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 18px;
+  border: 0;
+  border-bottom: 1px solid #eef1f0;
+  background: #ffffff;
+  color: #18221e;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.hf-user-menu-item:last-child {
+  border-bottom: 0;
+}
+
+.hf-user-menu-item svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: #26332d;
+}
+
+.hf-user-menu-item:hover {
+  background: #f5faf8;
+  color: var(--green);
+}
+
+.hf-user-menu-item:hover svg {
+  color: var(--green);
+}
+
+.hf-user-menu-item.logout:hover {
+  background: #fff5f5;
+  color: #c53030;
+}
+
+.hf-user-menu-item.logout:hover svg {
+  color: #c53030;
+}
+
+/* Modal xác nhận đăng xuất */
+.hf-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(9 26 20 / 58%);
+  backdrop-filter: blur(5px);
+}
+
+.hf-confirm-modal {
+  width: min(100%, 420px);
+  border-radius: 16px;
+  border: 1px solid #e2ebe6;
+  background: #ffffff;
+  padding: 24px;
+  box-shadow: 0 22px 48px rgb(10 30 22 / 22%);
+  box-sizing: border-box;
+}
+
+.hf-confirm-modal h3 {
+  margin: 0 0 8px;
+  color: #12271f;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.hf-confirm-modal p {
+  margin: 0 0 22px;
+  color: #53685f;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.hf-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.hf-confirm-cancel,
+.hf-confirm-logout {
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.hf-confirm-cancel {
+  border: 1px solid #d5e2dc;
+  background: #ffffff;
+  color: #243a31;
+}
+
+.hf-confirm-cancel:hover:not(:disabled) {
+  background: #f3f7f5;
+}
+
+.hf-confirm-logout {
+  border: 0;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.hf-confirm-logout:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.hf-confirm-cancel:disabled,
+.hf-confirm-logout:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .hf-login-btn {

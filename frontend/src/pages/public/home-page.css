@@ -70,7 +70,7 @@
   bottom: 52px;
   left: max(24px, calc((100vw - 1160px) / 2));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1.1fr) minmax(0, 1.65fr) 150px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1.25fr) 160px;
   align-items: stretch;
   border-radius: 17px;
   background: #ffffff;

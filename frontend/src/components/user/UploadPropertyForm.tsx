@@ -747,9 +747,6 @@ export function UploadPropertyForm({
       : "";
   });
 
-  const [bedrooms, setBedrooms] = useState<string>(isEditing ? "3" : "");
-  const [bathrooms, setBathrooms] = useState<string>(isEditing ? "2" : "");
-
   const [price, setPrice] = useState<string>(() => {
     if (initialData?.price) {
       const match = initialData.price.match(/[\d.,]+/);
@@ -1003,14 +1000,6 @@ export function UploadPropertyForm({
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFiles(e.dataTransfer.files);
     }
-  };
-
-  const handleSaveDraft = () => {
-    const msg = isEditing
-      ? "Đã lưu bản nháp chỉnh sửa tin đăng vào máy."
-      : "Đã lưu bản nháp tin đăng bất động sản.";
-    toast.info(msg, "Đã lưu nháp");
-    onSubmitSuccess?.(msg);
   };
 
   /**
@@ -1494,33 +1483,6 @@ export function UploadPropertyForm({
                   placeholder="Nhập thông tin mô tả chi tiết về dự án, căn hộ, hướng nhà, tình trạng nội thất, tiện ích xung quanh, pháp lý..."
                 />
               </div>
-
-              <div className="upload-fields two">
-                <div className="upload-field">
-                  <label htmlFor="bedrooms">Số phòng ngủ</label>
-                  <input
-                    id="bedrooms"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={bedrooms}
-                    onChange={(e) => setBedrooms(e.target.value)}
-                    placeholder="Ví dụ: 3"
-                  />
-                </div>
-                <div className="upload-field">
-                  <label htmlFor="bathrooms">Số phòng tắm</label>
-                  <input
-                    id="bathrooms"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={bathrooms}
-                    onChange={(e) => setBathrooms(e.target.value)}
-                    placeholder="Ví dụ: 2"
-                  />
-                </div>
-              </div>
             </div>
           </section>
 
@@ -1727,14 +1689,6 @@ export function UploadPropertyForm({
               Hủy bỏ
             </button>
             <div className="upload-actions-right">
-              <button
-                type="button"
-                className="upload-button"
-                disabled={isSubmitting}
-                onClick={handleSaveDraft}
-              >
-                Lưu nháp
-              </button>
               <button
                 type="button"
                 className="upload-button primary"

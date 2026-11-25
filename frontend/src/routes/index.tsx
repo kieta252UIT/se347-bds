@@ -21,6 +21,8 @@ import { CreatePropertyPage } from "@/pages/user/CreatePropertyPage";
 import { MyPropertiesPage } from "@/pages/user/MyPropertiesPage";
 import { SavedPropertiesPage } from "@/pages/user/SavedPropertiesPage";
 import { WalletPage } from "@/pages/user/WalletPage";
+import { ProfilePage } from "@/pages/user/ProfilePage";
+import { ChangePasswordPage } from "@/pages/user/ChangePasswordPage";
 
 import { KdvDashboardPage } from "@/pages/kdv/KdvDashboardPage";
 import { ModerationQueuePage } from "@/pages/kdv/ModerationQueuePage";
@@ -54,6 +56,8 @@ export const router = createBrowserRouter([
           { path: "dang-tin", element: <CreatePropertyPage /> },
           { path: "tin-da-luu", element: <SavedPropertiesPage /> },
           { path: "vi-tien", element: <WalletPage /> },
+          { path: "thong-tin-ca-nhan", element: <ProfilePage /> },
+          { path: "doi-mat-khau", element: <ChangePasswordPage /> },
         ],
       },
     ],
