@@ -18,8 +18,6 @@ function formatListingAddress(listing: MyListingItem): string {
 
 type ListingFilter = "all" | "pending" | "approved" | "rejected" | "violation";
 
-const initialListings: MyListingItem[] = [];
-
 const filters: { id: ListingFilter; label: string }[] = [
   { id: "all", label: "Tất cả" },
   { id: "pending", label: "Chờ duyệt" },
@@ -228,10 +226,8 @@ export function MyPropertiesPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const [previewSignedIn, setPreviewSignedIn] = useState(false);
-  const [listings, setListings] = useState<MyListingItem[]>(() =>
-    listingService.getMyListings(initialListings)
-  );
-  const [isFetching, setIsFetching] = useState(false);
+  const [listings, setListings] = useState<MyListingItem[]>([]);
+  const [isFetching, setIsFetching] = useState(true);
 
   useEffect(() => {
     if (!isAuthenticated) return;

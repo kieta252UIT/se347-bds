@@ -65,19 +65,6 @@ export function SavedPropertiesPage() {
             sánh.
           </p>
         </div>
-
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className="pdp-back-btn"
-            onClick={() => void fetchFavorites(page)}
-          >
-            Làm mới danh sách
-          </button>
-          <Link to="/tim-kiem" className="pdp-back-btn">
-            + Tìm thêm bất động sản
-          </Link>
-        </div>
       </div>
 
       {errorMsg && (

@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import { searchService } from "@/services/searchService";
 import { favoriteService } from "@/services/favoriteService";
-import { listingService } from "@/services/listingService";
 import { mockProperties } from "@/data/mockProperties";
 import type { MyListingItem } from "@/types/listing";
 import type { TinCongKhaiDto } from "@/types/search";
@@ -216,9 +215,7 @@ export function PropertyDetailPage() {
         const matchedMyListing =
           statePreview && String(statePreview.id) === String(id)
             ? statePreview
-            : listingService
-                .getMyListings([])
-                .find((item) => String(item.id) === String(id));
+            : undefined;
 
         if (matchedMyListing) {
           setListing(
