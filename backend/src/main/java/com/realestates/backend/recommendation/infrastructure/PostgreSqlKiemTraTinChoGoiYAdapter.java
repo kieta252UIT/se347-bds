@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -20,6 +21,22 @@ import org.springframework.stereotype.Component;
 public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort {
 
     private final JdbcTemplate jdbcTemplate;
+
+    private static PriceConverter.DonViGia mapDonViGia(String donViGia) {
+        if (donViGia == null) {
+            return PriceConverter.DonViGia.TONG_VND;
+        }
+        return switch (donViGia.toLowerCase()) {
+            case "vnd_tong" -> PriceConverter.DonViGia.TONG_VND;
+            case "vnd_m2" -> PriceConverter.DonViGia.VND_M2;
+            case "vnd_thang" -> PriceConverter.DonViGia.VND_THANG;
+            case "vnd_ngay" -> PriceConverter.DonViGia.VND_NGAY;
+            case "vnd_nam" -> PriceConverter.DonViGia.VND_NAM;
+            case "vnd_m2_ngay" -> PriceConverter.DonViGia.VND_M2_NGAY;
+            case "vnd_m2_thang" -> PriceConverter.DonViGia.VND_M2_THANG;
+            default -> PriceConverter.DonViGia.TONG_VND;
+        };
+    }
 
     private static final RowMapper<ThongTinTinGoiY> ROW_MAPPER = (rs, rowNum) -> {
         BigDecimal viDo = rs.getBigDecimal("vi_do");
@@ -32,11 +49,10 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
         BigDecimal dienTichM2 = rs.getBigDecimal("dien_tich_m2");
 
         BigDecimal giaTongChuan = giaGoc;
-        BigDecimal giaM2Chuan = BigDecimal.ZERO;
-        if (giaGoc != null && donViGia != null && dienTichM2 != null && dienTichM2.compareTo(BigDecimal.ZERO) > 0) {
+        BigDecimal giaM2Chuan = giaGoc;
+        if (giaGoc != null && dienTichM2 != null && dienTichM2.compareTo(BigDecimal.ZERO) > 0) {
             try {
-                PriceConverter.DonViGia dv = PriceConverter.DonViGia.valueOf(donViGia.toUpperCase());
-                PriceConverter.KetQuaQuyDoiGia quyDoi = PriceConverter.quyDoi(giaGoc, dv, dienTichM2);
+                var quyDoi = PriceConverter.quyDoi(giaGoc, mapDonViGia(donViGia), dienTichM2);
                 giaTongChuan = quyDoi.giaTongChuanVnd();
                 giaM2Chuan = quyDoi.giaM2ChuanVnd();
             } catch (Exception ignored) {
@@ -66,6 +82,7 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
         );
     };
 
+    @Autowired
     public PostgreSqlKiemTraTinChoGoiYAdapter(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate không được null");
     }

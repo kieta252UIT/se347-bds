@@ -51,8 +51,11 @@ class FlywayMigrationTests {
         }
         assertThat(names).containsExactlyInAnyOrder("tai_khoan", "phien_xac_thuc", "tin_bat_dong_san",
                 "phien_ban_tin", "anh_tin", "han_muc_thang", "yeu_thich_tin", "goi_day_tin",
-                "su_kien_goi", "bao_cao_vi_pham", "yeu_cau_ghi", "nhat_ky_kiem_toan");
+                "su_kien_goi", "bao_cao_vi_pham", "yeu_cau_ghi", "nhat_ky_kiem_toan",
+                "diem_goi_y", "lich_su_xem", "job_lease");
         assertThat(count("SELECT count(*) FROM se214.flyway_schema_history WHERE version='1' AND success"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM se214.flyway_schema_history WHERE version='2' AND success"))
                 .isEqualTo(1);
         assertThat(db.flyway().validateWithResult().validationSuccessful).isTrue();
     }
@@ -69,7 +72,7 @@ class FlywayMigrationTests {
     void nextVersionUpgradesExistingDatabaseWithoutLosingData() throws Exception {
         createAccount();
         String location = copyBaseline();
-        Files.writeString(temporaryMigrations.resolve("V2__test_upgrade.sql"),
+        Files.writeString(temporaryMigrations.resolve("V3__test_upgrade.sql"),
                 "ALTER TABLE se214.tai_khoan ADD COLUMN test_upgrade_marker integer NOT NULL DEFAULT 7;");
         assertThat(db.flyway(location).migrate().migrationsExecuted).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM se214.tai_khoan WHERE test_upgrade_marker=7")).isEqualTo(1);
@@ -79,7 +82,7 @@ class FlywayMigrationTests {
     void failedMigrationRollsBackDdlAndData() throws Exception {
         createAccount();
         String location = copyBaseline();
-        Files.writeString(temporaryMigrations.resolve("V2__test_rollback.sql"), """
+        Files.writeString(temporaryMigrations.resolve("V3__test_rollback.sql"), """
                 CREATE TABLE se214.test_partial_migration (id integer PRIMARY KEY);
                 INSERT INTO se214.test_partial_migration VALUES (1);
                 UPDATE se214.tai_khoan SET ho_ten='Không được commit';
@@ -89,7 +92,7 @@ class FlywayMigrationTests {
         assertThat(count("SELECT count(*) FROM pg_tables WHERE schemaname='se214' AND tablename='test_partial_migration'"))
                 .isZero();
         assertThat(count("SELECT count(*) FROM se214.tai_khoan WHERE ho_ten='Người thử'")).isEqualTo(1);
-        assertThat(count("SELECT count(*) FROM se214.flyway_schema_history WHERE version='2'" )).isZero();
+        assertThat(count("SELECT count(*) FROM se214.flyway_schema_history WHERE version='3'" )).isZero();
     }
 
     @Test
@@ -189,11 +192,16 @@ class FlywayMigrationTests {
     }
 
     private String copyBaseline() throws Exception {
-        try (var stream = getClass().getResourceAsStream("/db/migration/V1__khoi_tao_schema_sprint_1.sql")) {
-            if (stream == null) throw new IllegalStateException("Không tìm thấy migration V1");
-            Files.copy(stream, temporaryMigrations.resolve("V1__khoi_tao_schema_sprint_1.sql"));
-        }
+        copyMigration("V1__khoi_tao_schema_sprint_1.sql");
+        copyMigration("V2__thiet_ke_goi_y_va_job_lease.sql");
         return "filesystem:" + temporaryMigrations.toAbsolutePath().toString().replace('\\', '/');
+    }
+
+    private void copyMigration(String fileName) throws Exception {
+        try (var stream = getClass().getResourceAsStream("/db/migration/" + fileName)) {
+            if (stream == null) throw new IllegalStateException("Không tìm thấy migration " + fileName);
+            Files.copy(stream, temporaryMigrations.resolve(fileName));
+        }
     }
 
     private UUID createAccount() throws Exception {
