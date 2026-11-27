@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,6 +28,7 @@ public class PostgreSqlGoiDayTinRepository implements GoiDayTinRepository {
         this.jdbcTemplate = new JdbcTemplate(Objects.requireNonNull(dataSource, "dataSource không được null"));
     }
 
+    @Autowired
     public PostgreSqlGoiDayTinRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate không được null");
     }
