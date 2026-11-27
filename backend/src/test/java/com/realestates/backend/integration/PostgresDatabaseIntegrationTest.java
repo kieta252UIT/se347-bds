@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Cấp độ 2: Kiểm thử tích hợp cơ sở dữ liệu (Database Integration Testing) theo IEEE 829 - Mục 7.2.
  * Kiểm tra:
- * - Flyway Migration khởi tạo schema se214 đầy đủ 12 bảng.
+ * - Flyway Migration khởi tạo schema se214 đầy đủ 15 bảng (12 bảng Sprint 1 + 3 bảng Gợi ý / Job Lease Sprint 2).
  * - Ràng buộc toàn vẹn: CHECK (hạn mức <= 3, BR-09), Unique index, Foreign Key.
  * - Giao dịch ACID và cơ chế Transaction Rollback.
  */
@@ -29,7 +29,7 @@ class PostgresDatabaseIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("FLYWAY-01: Schema PostgreSQL 17 được khởi tạo đầy đủ 12 bảng nghiệp vụ Sprint 1")
+    @DisplayName("FLYWAY-01: Schema PostgreSQL 17 được khởi tạo đầy đủ các bảng nghiệp vụ (12 bảng Sprint 1 + 3 bảng Gợi ý / Job Lease Sprint 2)")
     void flywayShouldInitializeCoreTables() {
         Integer tableCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'se214' " +
@@ -37,7 +37,7 @@ class PostgresDatabaseIntegrationTest {
                 Integer.class
         );
 
-        assertThat(tableCount).isEqualTo(12);
+        assertThat(tableCount).isEqualTo(15);
     }
 
     @Test
