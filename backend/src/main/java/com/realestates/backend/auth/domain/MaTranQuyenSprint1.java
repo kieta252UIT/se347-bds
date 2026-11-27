@@ -39,7 +39,25 @@ public final class MaTranQuyenSprint1 {
             "nguoiKiemDuyetId",
             "nguoi_kiem_duyet_id",
             "nguoiXuLyId",
-            "nguoi_xu_ly_id"
+            "nguoi_xu_ly_id",
+            "nguoiGuiId",
+            "nguoi_gui_id",
+            "nguoiQuyetDinhId",
+            "nguoi_quyet_dinh_id",
+            "nguoiThucHienId",
+            "nguoi_thuc_hien_id",
+            "soDu",
+            "so_du",
+            "soDuVnd",
+            "so_du_vnd",
+            "giaDaMua",
+            "gia_da_mua",
+            "thoiLuongConLai",
+            "thoi_luong_con_lai",
+            "hetHanLuc",
+            "het_han_luc",
+            "soLanViPham",
+            "so_lan_vi_pham"
     );
 
     private MaTranQuyenSprint1() {
@@ -63,18 +81,29 @@ public final class MaTranQuyenSprint1 {
         return switch (thaoTac) {
             case TIM_LOC_SAP_XEP_TIN_CONG_KHAI,
                  XEM_CHI_TIET_TIN_DA_DUYET,
+                 XEM_GOI_Y_BAT_DONG_SAN,
                  DANG_KY_XAC_MINH_EMAIL_DANG_NHAP_DAT_LAI_MAT_KHAU -> true;
             case LAY_HO_SO_HIEN_TAI,
                  DANG_XUAT -> true;
             case THEM_GO_XEM_DANH_SACH_YEU_THICH,
+                 GHI_NHAN_LUOT_XEM_TIN,
                  TAO_NHAP_CAP_NHAT_NHAP_GUI_DUYET_TIN,
                  CHINH_SUA_TIN_CUA_MINH,
                  XOA_MEM_TIN_CUA_MINH,
+                 XEM_TIN_CUA_TOI_CHI_DOC,
+                 TAI_ANH_BANG_CHUNG_BAO_CAO,
                  GUI_BAO_CAO_VI_PHAM,
+                 XEM_THONG_BAO_CUA_TOI,
+                 XEM_VI_VA_SO_GIAO_DICH,
+                 XEM_BAO_GIA_GOI_DAY_TIN,
                  KICH_HOAT_GOI_DAY_TIN -> vaiTro == VaiTroTaiKhoan.NGUOI_DUNG;
             case XEM_HANG_CHO_VA_DUYET_TIN,
-                 XEM_VA_XU_LY_BAO_CAO_VI_PHAM -> vaiTro == VaiTroTaiKhoan.KIEM_DUYET_VIEN;
-            case TAO_CAP_NHAT_KHOA_MO_KHOA_TAI_KHOAN -> vaiTro == VaiTroTaiKhoan.QUAN_TRI_VIEN;
+                 XEM_VA_XU_LY_BAO_CAO_VI_PHAM,
+                 TAO_YEU_CAU_KHOA_TAI_KHOAN -> vaiTro == VaiTroTaiKhoan.KIEM_DUYET_VIEN;
+            case TAO_CAP_NHAT_KHOA_MO_KHOA_TAI_KHOAN,
+                 CAP_NHAT_HO_SO_VA_VAI_TRO_QUAN_TRI,
+                 XEM_VA_QUYET_DINH_YEU_CAU_KHOA,
+                 MO_KHOA_TAI_KHOAN_CO_CAN_CU -> vaiTro == VaiTroTaiKhoan.QUAN_TRI_VIEN;
         };
     }
 
