@@ -1,5 +1,6 @@
 package com.realestates.backend.recommendation.infrastructure;
 
+import com.realestates.backend.domain.model.PriceConverter;
 import com.realestates.backend.recommendation.domain.TieuChiGoiY;
 import com.realestates.backend.recommendation.domain.ViTriToaDo;
 import java.math.BigDecimal;
@@ -9,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -20,11 +22,41 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
 
     private final JdbcTemplate jdbcTemplate;
 
+    private static PriceConverter.DonViGia mapDonViGia(String donViGia) {
+        if (donViGia == null) {
+            return PriceConverter.DonViGia.TONG_VND;
+        }
+        return switch (donViGia.toLowerCase()) {
+            case "vnd_tong" -> PriceConverter.DonViGia.TONG_VND;
+            case "vnd_m2" -> PriceConverter.DonViGia.VND_M2;
+            case "vnd_thang" -> PriceConverter.DonViGia.VND_THANG;
+            case "vnd_ngay" -> PriceConverter.DonViGia.VND_NGAY;
+            case "vnd_nam" -> PriceConverter.DonViGia.VND_NAM;
+            case "vnd_m2_ngay" -> PriceConverter.DonViGia.VND_M2_NGAY;
+            case "vnd_m2_thang" -> PriceConverter.DonViGia.VND_M2_THANG;
+            default -> PriceConverter.DonViGia.TONG_VND;
+        };
+    }
+
     private static final RowMapper<ThongTinTinGoiY> ROW_MAPPER = (rs, rowNum) -> {
         BigDecimal viDo = rs.getBigDecimal("vi_do");
         BigDecimal kinhDo = rs.getBigDecimal("kinh_do");
         ViTriToaDo toaDo = (viDo != null && kinhDo != null) ? new ViTriToaDo(viDo, kinhDo) : null;
         UUID anhId = (UUID) rs.getObject("anh_dai_dien_id");
+
+        BigDecimal giaGoc = rs.getBigDecimal("gia_goc");
+        String donViGia = rs.getString("don_vi_gia");
+        BigDecimal dienTichM2 = rs.getBigDecimal("dien_tich_m2");
+        BigDecimal giaTongChuan = giaGoc;
+        BigDecimal giaM2Chuan = giaGoc;
+        if (giaGoc != null && dienTichM2 != null && dienTichM2.compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                var quyDoi = PriceConverter.quyDoi(giaGoc, mapDonViGia(donViGia), dienTichM2);
+                giaTongChuan = quyDoi.giaTongChuanVnd();
+                giaM2Chuan = quyDoi.giaM2ChuanVnd();
+            } catch (Exception ignored) {
+            }
+        }
 
         return new ThongTinTinGoiY(
                 (UUID) rs.getObject("tin_id"),
@@ -33,11 +65,11 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
                 rs.getString("mo_ta"),
                 rs.getString("loai_giao_dich"),
                 rs.getString("loai_bds"),
-                rs.getBigDecimal("gia_goc"),
-                rs.getString("don_vi_gia"),
-                rs.getBigDecimal("gia_tong_chuan"),
-                rs.getBigDecimal("gia_m2_chuan"),
-                rs.getBigDecimal("dien_tich_m2"),
+                giaGoc,
+                donViGia,
+                giaTongChuan,
+                giaM2Chuan,
+                dienTichM2,
                 rs.getString("dia_chi"),
                 rs.getString("khu_vuc"),
                 toaDo,
@@ -49,6 +81,7 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
         );
     };
 
+    @Autowired
     public PostgreSqlKiemTraTinChoGoiYAdapter(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate không được null");
     }
@@ -64,9 +97,7 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
                        pb.loai_bds,
                        pb.gia_goc,
                        pb.don_vi_gia,
-                       pb.gia_tong_chuan,
-                       pb.gia_m2_chuan,
-                       pb.dien_tich AS dien_tich_m2,
+                       pb.dien_tich_m2,
                        pb.dia_chi,
                        pb.khu_vuc,
                        pb.vi_do,
@@ -93,7 +124,8 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
         buildFilterSql(sql, params, tieuChi);
 
         sql.append(" ORDER BY t.ngay_dang DESC LIMIT 200");
-        return jdbcTemplate.query(sql.toString(), ROW_MAPPER, params.toArray());
+        List<ThongTinTinGoiY> ketQua = jdbcTemplate.query(sql.toString(), ROW_MAPPER, params.toArray());
+        return locTheoGia(ketQua, tieuChi);
     }
 
     @Override
@@ -107,9 +139,7 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
                        pb.loai_bds,
                        pb.gia_goc,
                        pb.don_vi_gia,
-                       pb.gia_tong_chuan,
-                       pb.gia_m2_chuan,
-                       pb.dien_tich AS dien_tich_m2,
+                       pb.dien_tich_m2,
                        pb.dia_chi,
                        pb.khu_vuc,
                        pb.vi_do,
@@ -133,7 +163,27 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
         buildFilterSql(sql, params, tieuChi);
 
         sql.append(" LIMIT 50");
-        return jdbcTemplate.query(sql.toString(), ROW_MAPPER, params.toArray());
+        List<ThongTinTinGoiY> ketQua = jdbcTemplate.query(sql.toString(), ROW_MAPPER, params.toArray());
+        return locTheoGia(ketQua, tieuChi);
+    }
+
+    private List<ThongTinTinGoiY> locTheoGia(List<ThongTinTinGoiY> danhSach, TieuChiGoiY tieuChi) {
+        if (tieuChi == null || (tieuChi.giaMinVnd() == null && tieuChi.giaMaxVnd() == null)) {
+            return danhSach;
+        }
+        return danhSach.stream()
+                .filter(t -> {
+                    if (tieuChi.giaMinVnd() != null && t.giaTongChuan() != null
+                            && t.giaTongChuan().compareTo(tieuChi.giaMinVnd()) < 0) {
+                        return false;
+                    }
+                    if (tieuChi.giaMaxVnd() != null && t.giaTongChuan() != null
+                            && t.giaTongChuan().compareTo(tieuChi.giaMaxVnd()) > 0) {
+                        return false;
+                    }
+                    return true;
+                })
+                .toList();
     }
 
     private void buildFilterSql(StringBuilder sql, List<Object> params, TieuChiGoiY tieuChi) {
@@ -154,16 +204,6 @@ public class PostgreSqlKiemTraTinChoGoiYAdapter implements KiemTraTinChoGoiYPort
         if (tieuChi.coLocKhuVuc()) {
             sql.append(" AND pb.khu_vuc = ?");
             params.add(tieuChi.khuVuc());
-        }
-
-        if (tieuChi.giaMinVnd() != null && tieuChi.giaMinVnd().compareTo(BigDecimal.ZERO) > 0) {
-            sql.append(" AND pb.gia_tong_chuan >= ?");
-            params.add(tieuChi.giaMinVnd());
-        }
-
-        if (tieuChi.giaMaxVnd() != null && tieuChi.giaMaxVnd().compareTo(BigDecimal.ZERO) > 0) {
-            sql.append(" AND pb.gia_tong_chuan <= ?");
-            params.add(tieuChi.giaMaxVnd());
         }
     }
 }
