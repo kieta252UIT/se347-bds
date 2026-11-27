@@ -1,5 +1,6 @@
 package com.realestates.backend.auth.domain;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -13,19 +14,38 @@ import java.util.UUID;
  * docs/ma-tran-quyen-replay-va-thu-tu-khoa-sprint-2.md:
  * - QD-S2-01 (1A): Chặn chủ tin tự báo cáo vi phạm tin của chính mình.
  * - QD-S2-02 (2A): Quyền đọc ảnh bằng chứng báo cáo riêng tư (người gửi, KDV, và QTV khi thuộc căn cứ phiếu khóa;
- *   chặn tuyệt đối Khách, người dùng khác và chủ tin bị báo cáo).
- * - S2-07 / S2-14: Chặn Quản trị viên tự hạ quyền hoặc tự khóa chính mình; kiểm tra trường tự khai bị cấm
- *   trên API quản trị tài khoản (chỉ mở ngoại lệ có kiểm soát cho trường vaiTro).
+ *   chặn tuyệt đối Khách, người dùng khác và chủ tin bị báo cáo ở mọi vai trò).
+ * - AC-08.4 / Q03: Quy tắc thống nhất xét đủ điều kiện đề xuất khóa / đề xuất lại sau khi bị Admin từ chối.
+ * - S2-07 / S2-14: Chặn Quản trị viên tự hạ quyền hoặc tự khóa chính mình; kiểm tra danh sách trắng (allowlist)
+ *   các trường được phép trên DTO tạo/cập nhật tài khoản quản trị.
  * - Bảng 4: Sắp xếp thứ tự khóa UUID không dấu khớp 100% với PostgreSQL ORDER BY id ASC để chống Deadlock.
  */
 public final class MaTranQuyenSprint2 {
 
     public static final String ANH_TAM = "tam";
     public static final String ANH_DA_GAN = "da_gan";
+    public static final int NGUONG_TIN_VI_PHAM_TOI_THIEU_DE_XUAT_KHOA = 3;
 
-    private static final Set<String> CAC_TRUONG_DUOC_MO_TRONG_DTO_QUAN_TRI = Set.of(
+    /**
+     * Danh sách trường duy nhất được phép xuất hiện trong body JSON của POST /api/admin/accounts (UC-15/16).
+     * Từ chối mọi trường lạ hoặc trường hệ thống như id, supabaseAuthUserId, vai_tro, trangThai, mocThuHoi, soDuVnd.
+     */
+    public static final Set<String> CAC_TRUONG_CHO_PHEP_TAO_TAI_KHOAN_QUAN_TRI = Set.of(
+            "email",
+            "hoTen",
+            "soDienThoai",
             "vaiTro",
-            "vai_tro"
+            "matKhau"
+    );
+
+    /**
+     * Danh sách trường duy nhất được phép xuất hiện trong body JSON của PATCH /api/admin/accounts/{accountId} (UC-16).
+     * Từ chối mọi trường lạ hoặc trường hệ thống như id, email, supabaseAuthUserId, vai_tro, trangThai, mocThuHoi, soDuVnd.
+     */
+    public static final Set<String> CAC_TRUONG_CHO_PHEP_CAP_NHAT_TAI_KHOAN_QUAN_TRI = Set.of(
+            "hoTen",
+            "soDienThoai",
+            "vaiTro"
     );
 
     /**
@@ -42,16 +62,18 @@ public final class MaTranQuyenSprint2 {
     };
 
     /**
-     * Thông tin truy cập của một tệp ảnh bằng chứng báo cáo vi phạm (QD-S2-02).
+     * Thông tin truy cập của một tệp ảnh bằng chứng báo cáo vi phạm đọc từ CSDL (QD-S2-02).
      *
      * @param trangThaiAnh        trạng thái ảnh ('tam', 'da_gan', 'cho_don')
      * @param nguoiTaiAnhId       tai_khoan_id của người tải ảnh / gửi báo cáo
-     * @param chuTinBiBaoCaoId    chu_id của tin bất động sản bị báo cáo (có thể null khi ảnh còn ở trạng thái 'tam')
-     * @param thuocCanCuPhieuKhoa true nếu báo cáo chứa ảnh đã được xác nhận vi phạm và nằm trong căn cứ phiếu đề xuất khóa
+     * @param baoCaoId            id của báo cáo vi phạm mà ảnh đã gắn vào (bắt buộc khác null khi trangThaiAnh = 'da_gan')
+     * @param chuTinBiBaoCaoId    chu_id của tin bất động sản bị báo cáo (bắt buộc khác null khi trangThaiAnh = 'da_gan')
+     * @param thuocCanCuPhieuKhoa cờ đọc từ CSDL: true khi báo cáo chứa ảnh đã 'da_xac_nhan' và nằm trong căn cứ một phiếu khóa
      */
     public record AnhBangChungBaoCaoTruyCap(
             String trangThaiAnh,
             UUID nguoiTaiAnhId,
+            UUID baoCaoId,
             UUID chuTinBiBaoCaoId,
             boolean thuocCanCuPhieuKhoa
     ) {
@@ -77,11 +99,13 @@ public final class MaTranQuyenSprint2 {
     /**
      * QD-S2-02 (2A): Kiểm tra quyền đọc tệp ảnh bằng chứng báo cáo riêng tư.
      * - Khách, tài khoản bị khóa/chưa xác minh email, ảnh trạng thái khác 'tam'/'da_gan': luôn bị từ chối (false).
-     * - Ảnh 'tam': chỉ chính người dùng đã tải ảnh được phép đọc.
+     * - Ảnh 'tam': chỉ chính NGUOI_DUNG đã tải ảnh (và chưa gắn vào báo cáo) được đọc.
      * - Ảnh 'da_gan':
-     *   + NGUOI_DUNG: chỉ người gửi báo cáo (và không phải chủ tin bị báo cáo) được đọc; chủ tin bị báo cáo luôn bị chặn.
+     *   + Bắt buộc có đủ liên kết baoCaoId và chuTinBiBaoCaoId từ CSDL.
+     *   + Chủ tin bị báo cáo luôn bị từ chối ở MỌI vai trò (kể cả khi tài khoản đó được cấp KDV hoặc Admin về sau).
+     *   + NGUOI_DUNG: chỉ người gửi báo cáo đó được đọc.
      *   + KIEM_DUYET_VIEN: được phép đọc để thẩm định báo cáo.
-     *   + QUAN_TRI_VIEN: chỉ được đọc khi ảnh thuộc căn cứ của phiếu đề xuất khóa tài khoản (UC-17).
+     *   + QUAN_TRI_VIEN: chỉ được đọc khi CSDL xác nhận ảnh thuộc báo cáo đã xác nhận nằm trong căn cứ phiếu khóa (UC-17).
      */
     public static boolean duocPhepDocAnhBangChungBaoCao(
             AnhBangChungBaoCaoTruyCap anh,
@@ -101,28 +125,63 @@ public final class MaTranQuyenSprint2 {
         }
 
         if (laAnhTam) {
+            if (anh.baoCaoId() != null) {
+                return false;
+            }
             return nguoiDoc.getVaiTro() == VaiTroTaiKhoan.NGUOI_DUNG
                     && nguoiDoc.getTaiKhoanId().equals(anh.nguoiTaiAnhId());
         }
 
+        if (anh.baoCaoId() == null || anh.chuTinBiBaoCaoId() == null) {
+            return false;
+        }
+        if (nguoiDoc.getTaiKhoanId().equals(anh.chuTinBiBaoCaoId())) {
+            return false;
+        }
+
         return switch (nguoiDoc.getVaiTro()) {
-            case NGUOI_DUNG -> nguoiDoc.getTaiKhoanId().equals(anh.nguoiTaiAnhId())
-                    && !nguoiDoc.getTaiKhoanId().equals(anh.chuTinBiBaoCaoId());
+            case NGUOI_DUNG -> nguoiDoc.getTaiKhoanId().equals(anh.nguoiTaiAnhId());
             case KIEM_DUYET_VIEN -> true;
             case QUAN_TRI_VIEN -> anh.thuocCanCuPhieuKhoa();
         };
     }
 
     /**
-     * S2-07 / S2-14 (UC-16): Kiểm tra quyền cập nhật vai trò tài khoản bởi Quản trị viên.
-     * Chốt chặn bắt buộc: Quản trị viên không được tự hạ quyền của chính mình xuống vai trò thấp hơn.
+     * AC-08.4 / Q03: Quy tắc thống nhất kiểm tra một tài khoản chủ tin có đủ điều kiện để KDV gửi phiếu đề xuất khóa
+     * (dùng chung cho cả tính cờ {@code coTheDeXuatKhoa} trên giao diện KDV lẫn kiểm chứng tại POST /api/moderation/lock-requests).
+     *
+     * @param soTinViPhamDaXacNhan số lượng tin vi phạm duy nhất (COUNT(su_kien_vi_pham)) của chủ tin
+     * @param coPhieuChoAdmin      true nếu chủ tin đang có một phiếu ở trạng thái 'cho_admin'
+     * @param mocTuChoiGanNhat     thời điểm Admin từ chối phiếu khóa gần nhất (null nếu chưa từng bị từ chối)
+     * @param mocViPhamMoiNhat     thời điểm phát sinh sự kiện vi phạm mới nhất của chủ tin (null nếu chưa có vi phạm)
      */
-    public static boolean duocPhepCapNhatVaiTroQuanTri(
+    public static boolean duDieuKienDeXuatKhoa(
+            int soTinViPhamDaXacNhan,
+            boolean coPhieuChoAdmin,
+            Instant mocTuChoiGanNhat,
+            Instant mocViPhamMoiNhat
+    ) {
+        if (soTinViPhamDaXacNhan < NGUONG_TIN_VI_PHAM_TOI_THIEU_DE_XUAT_KHOA || coPhieuChoAdmin || mocViPhamMoiNhat == null) {
+            return false;
+        }
+        if (mocTuChoiGanNhat == null) {
+            return true;
+        }
+        return mocViPhamMoiNhat.isAfter(mocTuChoiGanNhat);
+    }
+
+    /**
+     * S2-07 / S2-14 (UC-16): Kiểm tra quyền cập nhật hồ sơ / vai trò tài khoản bởi Quản trị viên dưới khóa dòng.
+     * Nếu request PATCH chỉ sửa hồ sơ và không gửi {@code vaiTroMoiTrongRequest} (null), dùng {@code vaiTroHienTaiTrongDb}
+     * đã đọc dưới khóa để kiểm tra bất biến Quản trị viên không tự hạ quyền của chính mình.
+     */
+    public static boolean duocPhepCapNhatTaiKhoanQuanTri(
             PrincipalPhienHienTai principal,
             UUID taiKhoanMucTieuId,
-            VaiTroTaiKhoan vaiTroMoi
+            VaiTroTaiKhoan vaiTroHienTaiTrongDb,
+            VaiTroTaiKhoan vaiTroMoiTrongRequest
     ) {
-        if (taiKhoanMucTieuId == null || vaiTroMoi == null) {
+        if (taiKhoanMucTieuId == null || vaiTroHienTaiTrongDb == null) {
             return false;
         }
         if (!MaTranQuyenSprint1.duocPhepThucHien(
@@ -132,21 +191,38 @@ public final class MaTranQuyenSprint2 {
         )) {
             return false;
         }
+        VaiTroTaiKhoan vaiTroSauCapNhat = vaiTroMoiTrongRequest != null ? vaiTroMoiTrongRequest : vaiTroHienTaiTrongDb;
         if (principal.getTaiKhoanId().equals(taiKhoanMucTieuId)) {
-            return vaiTroMoi == VaiTroTaiKhoan.QUAN_TRI_VIEN;
+            return vaiTroSauCapNhat == VaiTroTaiKhoan.QUAN_TRI_VIEN;
         }
         return true;
     }
 
     /**
-     * S2-09 / S2-14 (UC-17): Kiểm tra quyền khóa tài khoản bởi Quản trị viên.
-     * Chốt chặn bắt buộc: Quản trị viên không được tự khóa tài khoản của chính mình.
+     * S2-07 / S2-14 (UC-16): Biến thể rút gọn khi {@code vaiTroMoi} bắt buộc được chỉ định tường minh.
+     */
+    public static boolean duocPhepCapNhatVaiTroQuanTri(
+            PrincipalPhienHienTai principal,
+            UUID taiKhoanMucTieuId,
+            VaiTroTaiKhoan vaiTroMoi
+    ) {
+        if (vaiTroMoi == null) {
+            return false;
+        }
+        return duocPhepCapNhatTaiKhoanQuanTri(principal, taiKhoanMucTieuId, vaiTroMoi, vaiTroMoi);
+    }
+
+    /**
+     * S2-09 / S2-14 (UC-17): Kiểm tra quyền khóa tài khoản bởi Quản trị viên dưới khóa dòng.
+     * Chốt chặn bắt buộc: Quản trị viên không được tự khóa tài khoản của chính mình và không khóa tài khoản Quản trị viên khác
+     * qua phiếu đề xuất khóa của KDV.
      */
     public static boolean duocPhepKhoaTaiKhoan(
             PrincipalPhienHienTai principal,
-            UUID taiKhoanBiKhoaId
+            UUID taiKhoanBiKhoaId,
+            VaiTroTaiKhoan vaiTroHienTaiCuaMucTieu
     ) {
-        if (taiKhoanBiKhoaId == null) {
+        if (taiKhoanBiKhoaId == null || vaiTroHienTaiCuaMucTieu == null) {
             return false;
         }
         if (!MaTranQuyenSprint1.duocPhepThucHien(
@@ -156,25 +232,46 @@ public final class MaTranQuyenSprint2 {
         )) {
             return false;
         }
-        return !principal.getTaiKhoanId().equals(taiKhoanBiKhoaId);
+        if (principal.getTaiKhoanId().equals(taiKhoanBiKhoaId)) {
+            return false;
+        }
+        return vaiTroHienTaiCuaMucTieu != VaiTroTaiKhoan.QUAN_TRI_VIEN;
+    }
+
+    public static boolean duocPhepKhoaTaiKhoan(
+            PrincipalPhienHienTai principal,
+            UUID taiKhoanBiKhoaId
+    ) {
+        return duocPhepKhoaTaiKhoan(principal, taiKhoanBiKhoaId, VaiTroTaiKhoan.NGUOI_DUNG);
     }
 
     /**
-     * Kiểm tra trường tự khai bị cấm riêng cho các endpoint quản trị tài khoản (POST/PATCH /api/admin/accounts),
-     * nơi Quản trị viên được phép truyền trường vaiTro nhưng vẫn bị cấm truyền các trường hệ thống như
-     * mocThuHoi, soDuVnd, trangThai, chuId, taiKhoanId...
+     * Kiểm tra theo danh sách trắng (allowlist) cho POST /api/admin/accounts:
+     * trả về tên trường đầu tiên không thuộc {@link #CAC_TRUONG_CHO_PHEP_TAO_TAI_KHOAN_QUAN_TRI}, hoặc null nếu hợp lệ.
      */
-    public static String timTruongTuKhaiBiCamChoQuanTriTaiKhoan(Map<String, ?> payload) {
+    public static String timTruongKhongDuocPhepTaoTaiKhoanQuanTri(Map<String, ?> payload) {
+        return timTruongNgoaiDanhSachChoPhep(payload, CAC_TRUONG_CHO_PHEP_TAO_TAI_KHOAN_QUAN_TRI);
+    }
+
+    /**
+     * Kiểm tra theo danh sách trắng (allowlist) cho PATCH /api/admin/accounts/{accountId}:
+     * trả về tên trường đầu tiên không thuộc {@link #CAC_TRUONG_CHO_PHEP_CAP_NHAT_TAI_KHOAN_QUAN_TRI}, hoặc null nếu hợp lệ.
+     */
+    public static String timTruongKhongDuocPhepCapNhatTaiKhoanQuanTri(Map<String, ?> payload) {
+        return timTruongNgoaiDanhSachChoPhep(payload, CAC_TRUONG_CHO_PHEP_CAP_NHAT_TAI_KHOAN_QUAN_TRI);
+    }
+
+    private static String timTruongNgoaiDanhSachChoPhep(Map<String, ?> payload, Set<String> allowlist) {
         if (payload == null || payload.isEmpty()) {
             return null;
         }
         for (String key : payload.keySet()) {
-            if (key != null) {
-                String trimmed = key.trim();
-                if (MaTranQuyenSprint1.CAC_TRUONG_TU_KHAI_BI_CAM.contains(trimmed)
-                        && !CAC_TRUONG_DUOC_MO_TRONG_DTO_QUAN_TRI.contains(trimmed)) {
-                    return trimmed;
-                }
+            if (key == null) {
+                return "";
+            }
+            String trimmed = key.trim();
+            if (trimmed.isEmpty() || !allowlist.contains(trimmed)) {
+                return trimmed;
             }
         }
         return null;

@@ -136,4 +136,88 @@ class QuyenDocAnhUnitTest {
                 anhDaGan(PHIEN_BAN_DA_DUYET, AnhTinTruyCap.ANH_DA_GAN, AnhTinTruyCap.TIN_DA_DUYET, true).khoaDoiTuongCanDoc()
         ).isEqualTo("hien-thi.png");
     }
+
+    @Test
+    @DisplayName("AC-08.2 / Q37: Trong ngữ cảnh báo cáo, KDV đọc được ảnh của phien_ban_da_duyet_id kể cả khi bản sửa đang chờ duyệt hoặc bị từ chối")
+    void kdvDocDuocAnhBanDaDuyetTrongNguCanhBaoCaoKhiBanSuaChoDuyetHoacBiTuChoi() {
+        UUID tinBaoCaoId = UUID.randomUUID();
+        PrincipalPhienHienTai kdv = nguoiDoc(UUID.randomUUID(), VaiTroTaiKhoan.KIEM_DUYET_VIEN);
+        PrincipalPhienHienTai admin = nguoiDoc(UUID.randomUUID(), VaiTroTaiKhoan.QUAN_TRI_VIEN);
+        PrincipalPhienHienTai chuTin = nguoiDoc(CHU_ID, VaiTroTaiKhoan.NGUOI_DUNG);
+
+        // 1. Tin đang cho_kiem_duyet bản sửa mới: ảnh bản đã duyệt cũ được đọc qua ngữ cảnh báo cáo, ảnh bản sửa chưa duyệt bị chặn
+        AnhTinTruyCap anhBanDaDuyetKhiDangSua = anhDaGan(
+                PHIEN_BAN_DA_DUYET,
+                AnhTinTruyCap.ANH_DA_GAN,
+                AnhTinTruyCap.TIN_CHO_KIEM_DUYET,
+                true
+        );
+        AnhTinTruyCap anhBanSuaChuaDuyet = anhDaGan(
+                PHIEN_BAN_HIEN_TAI,
+                AnhTinTruyCap.ANH_DA_GAN,
+                AnhTinTruyCap.TIN_CHO_KIEM_DUYET,
+                true
+        );
+
+        assertThat(QuyenDocAnh.duocPhepDoc(anhBanDaDuyetKhiDangSua, kdv)).isFalse();
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanDaDuyetKhiDangSua, tinBaoCaoId, tinBaoCaoId, kdv)).isTrue();
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanSuaChuaDuyet, tinBaoCaoId, tinBaoCaoId, kdv)).isFalse();
+
+        // 2. Bản sửa bị từ chối (trangThaiTin = bi_tu_choi), chủ tin thậm chí bị khóa: KDV vẫn đọc được bản đã duyệt gần nhất để xử lý báo cáo
+        AnhTinTruyCap anhBanDaDuyetKhiSuaBiTuChoi = anhDaGan(
+                PHIEN_BAN_DA_DUYET,
+                AnhTinTruyCap.ANH_DA_GAN,
+                "bi_tu_choi",
+                false
+        );
+        assertThat(QuyenDocAnh.duocPhepDoc(anhBanDaDuyetKhiSuaBiTuChoi, kdv)).isFalse();
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanDaDuyetKhiSuaBiTuChoi, tinBaoCaoId, tinBaoCaoId, kdv)).isTrue();
+
+        // 3. Sai vai trò hoặc lệch tinId của báo cáo thì bị chặn
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanDaDuyetKhiDangSua, tinBaoCaoId, UUID.randomUUID(), kdv)).isFalse();
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanDaDuyetKhiDangSua, tinBaoCaoId, tinBaoCaoId, admin)).isFalse();
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanDaDuyetKhiDangSua, tinBaoCaoId, tinBaoCaoId, chuTin)).isFalse();
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanDaDuyetKhiDangSua, tinBaoCaoId, tinBaoCaoId, null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("AC-08.2 & AC-08.3: Khi bản sửa mới được phê duyệt (phien_ban_da_duyet_id đổi) hoặc tin bị xóa, ảnh bản cũ không còn đọc được qua ngữ cảnh báo cáo")
+    void kdvKhongDocAnhBanCuSauKhiBanMoiDuocDuyetHoacKhiTinDaXoa() {
+        UUID tinBaoCaoId = UUID.randomUUID();
+        UUID phienBanMoiVuaDuyet = UUID.randomUUID();
+        PrincipalPhienHienTai kdv = nguoiDoc(UUID.randomUUID(), VaiTroTaiKhoan.KIEM_DUYET_VIEN);
+
+        // Bản sửa mới đã được duyệt -> phienBanDaDuyetId tiến lên phienBanMoiVuaDuyet
+        AnhTinTruyCap anhBanCuTruocDay = new AnhTinTruyCap(
+                UUID.randomUUID(),
+                CHU_ID,
+                AnhTinTruyCap.ANH_DA_GAN,
+                "goc-v1.png",
+                "hien-thi-v1.png",
+                "image/png",
+                PHIEN_BAN_DA_DUYET,
+                AnhTinTruyCap.TIN_DA_DUYET,
+                phienBanMoiVuaDuyet,
+                phienBanMoiVuaDuyet,
+                true
+        );
+        AnhTinTruyCap anhBanMoiHienHanh = new AnhTinTruyCap(
+                UUID.randomUUID(),
+                CHU_ID,
+                AnhTinTruyCap.ANH_DA_GAN,
+                "goc-v2.png",
+                "hien-thi-v2.png",
+                "image/png",
+                phienBanMoiVuaDuyet,
+                AnhTinTruyCap.TIN_DA_DUYET,
+                phienBanMoiVuaDuyet,
+                phienBanMoiVuaDuyet,
+                true
+        );
+        AnhTinTruyCap anhTinDaXoa = anhDaGan(PHIEN_BAN_DA_DUYET, AnhTinTruyCap.ANH_DA_GAN, "da_xoa", true);
+
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanCuTruocDay, tinBaoCaoId, tinBaoCaoId, kdv)).isFalse();
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhBanMoiHienHanh, tinBaoCaoId, tinBaoCaoId, kdv)).isTrue();
+        assertThat(QuyenDocAnh.duocPhepDocTrongNguCanhBaoCao(anhTinDaXoa, tinBaoCaoId, tinBaoCaoId, kdv)).isFalse();
+    }
 }
