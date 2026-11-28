@@ -232,13 +232,18 @@ class MaTranQuyenSprint2UnitTest {
                 adminOne, userTargetId, VaiTroTaiKhoan.NGUOI_DUNG, null
         )).isTrue();
 
-        // 2. Khóa tài khoản: cấm tự khóa và cấm khóa tài khoản vừa được cấp lên QUAN_TRI_VIEN sau lúc lập phiếu
+        // 2. Khóa tài khoản (bắt buộc truyền vai trò thực đọc dưới khóa): cấm tự khóa, cấm thiếu vai trò và cấm QTV khóa QTV khác
         assertThat(MaTranQuyenSprint2.duocPhepKhoaTaiKhoan(adminOne, userTargetId, VaiTroTaiKhoan.NGUOI_DUNG)).isTrue();
         assertThat(MaTranQuyenSprint2.duocPhepKhoaTaiKhoan(adminOne, userTargetId, VaiTroTaiKhoan.KIEM_DUYET_VIEN)).isTrue();
         assertThat(MaTranQuyenSprint2.duocPhepKhoaTaiKhoan(adminOne, adminOneId, VaiTroTaiKhoan.QUAN_TRI_VIEN)).isFalse();
         assertThat(MaTranQuyenSprint2.duocPhepKhoaTaiKhoan(adminOne, adminTwoId, VaiTroTaiKhoan.QUAN_TRI_VIEN)).isFalse();
+        assertThat(MaTranQuyenSprint2.duocPhepKhoaTaiKhoan(adminOne, userTargetId, null)).isFalse();
+        assertThat(Arrays.stream(MaTranQuyenSprint2.class.getDeclaredMethods())
+                .filter(m -> m.getName().equals("duocPhepKhoaTaiKhoan"))
+                .toList())
+                .hasSize(1);
 
-        // 3. Allowlist chặt cho POST /api/admin/accounts và PATCH /api/admin/accounts/{id}
+        // 3. Allowlist chặt cho POST /api/admin/accounts và PATCH /api/admin/accounts/{id} (so khớp nguyên tên trường JSON, không trim)
         assertThat(MaTranQuyenSprint2.timTruongKhongDuocPhepTaoTaiKhoanQuanTri(
                 Map.of("email", "kdv@example.com", "hoTen", "KDV Mới", "vaiTro", "kiem_duyet_vien")
         )).isNull();
@@ -251,6 +256,12 @@ class MaTranQuyenSprint2UnitTest {
         assertThat(MaTranQuyenSprint2.timTruongKhongDuocPhepTaoTaiKhoanQuanTri(
                 Map.of("email", "kdv@example.com", "hoTen", "KDV", "vai_tro", "quan_tri_vien")
         )).isEqualTo("vai_tro");
+        assertThat(MaTranQuyenSprint2.timTruongKhongDuocPhepTaoTaiKhoanQuanTri(
+                Map.of("email", "kdv@example.com", "hoTen", "KDV", " vaiTro ", "kiem_duyet_vien")
+        )).isEqualTo(" vaiTro ");
+        assertThat(MaTranQuyenSprint2.timTruongKhongDuocPhepTaoTaiKhoanQuanTri(
+                Map.of("email ", "kdv@example.com", "hoTen", "KDV")
+        )).isEqualTo("email ");
 
         assertThat(MaTranQuyenSprint2.timTruongKhongDuocPhepCapNhatTaiKhoanQuanTri(
                 Map.of("hoTen", "Tên mới", "soDienThoai", "0909123456")
@@ -258,8 +269,20 @@ class MaTranQuyenSprint2UnitTest {
         assertThat(MaTranQuyenSprint2.timTruongKhongDuocPhepCapNhatTaiKhoanQuanTri(
                 Map.of("hoTen", "Tên mới", "email", "doi.email@example.com")
         )).isEqualTo("email");
+        assertThat(MaTranQuyenSprint2.timTruongKhongDuocPhepCapNhatTaiKhoanQuanTri(
+                Map.of("hoTen", "Tên mới", " vaiTro ", "quan_tri_vien")
+        )).isEqualTo(" vaiTro ");
+        assertThat(MaTranQuyenSprint2.timTruongKhongDuocPhepCapNhatTaiKhoanQuanTri(
+                Map.of("   ", "rỗng")
+        )).isEqualTo("   ");
         assertThatThrownBy(() -> CurrentPermissionAndCsrfService.kiemTraTruongChoPhepCapNhatTaiKhoanQuanTri(
                 Map.of("hoTen", "Tên mới", "soDuVnd", 1000000)
+        )).isInstanceOf(AuthValidationException.class);
+        assertThatThrownBy(() -> CurrentPermissionAndCsrfService.kiemTraTruongChoPhepCapNhatTaiKhoanQuanTri(
+                Map.of("hoTen", "Tên mới", " vaiTro ", "kiem_duyet_vien")
+        )).isInstanceOf(AuthValidationException.class);
+        assertThatThrownBy(() -> CurrentPermissionAndCsrfService.kiemTraTruongChoPhepTaoTaiKhoanQuanTri(
+                Map.of("email", "kdv@example.com", "hoTen", "KDV", " vaiTro ", "kiem_duyet_vien")
         )).isInstanceOf(AuthValidationException.class);
     }
 

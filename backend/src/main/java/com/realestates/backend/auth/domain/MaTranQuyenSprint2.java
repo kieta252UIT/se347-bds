@@ -238,16 +238,10 @@ public final class MaTranQuyenSprint2 {
         return vaiTroHienTaiCuaMucTieu != VaiTroTaiKhoan.QUAN_TRI_VIEN;
     }
 
-    public static boolean duocPhepKhoaTaiKhoan(
-            PrincipalPhienHienTai principal,
-            UUID taiKhoanBiKhoaId
-    ) {
-        return duocPhepKhoaTaiKhoan(principal, taiKhoanBiKhoaId, VaiTroTaiKhoan.NGUOI_DUNG);
-    }
-
     /**
      * Kiểm tra theo danh sách trắng (allowlist) cho POST /api/admin/accounts:
-     * trả về tên trường đầu tiên không thuộc {@link #CAC_TRUONG_CHO_PHEP_TAO_TAI_KHOAN_QUAN_TRI}, hoặc null nếu hợp lệ.
+     * so khớp nguyên tên trường JSON (không trim) với {@link #CAC_TRUONG_CHO_PHEP_TAO_TAI_KHOAN_QUAN_TRI},
+     * trả về tên trường đầu tiên không hợp lệ hoặc null nếu hợp lệ.
      */
     public static String timTruongKhongDuocPhepTaoTaiKhoanQuanTri(Map<String, ?> payload) {
         return timTruongNgoaiDanhSachChoPhep(payload, CAC_TRUONG_CHO_PHEP_TAO_TAI_KHOAN_QUAN_TRI);
@@ -255,7 +249,8 @@ public final class MaTranQuyenSprint2 {
 
     /**
      * Kiểm tra theo danh sách trắng (allowlist) cho PATCH /api/admin/accounts/{accountId}:
-     * trả về tên trường đầu tiên không thuộc {@link #CAC_TRUONG_CHO_PHEP_CAP_NHAT_TAI_KHOAN_QUAN_TRI}, hoặc null nếu hợp lệ.
+     * so khớp nguyên tên trường JSON (không trim) với {@link #CAC_TRUONG_CHO_PHEP_CAP_NHAT_TAI_KHOAN_QUAN_TRI},
+     * trả về tên trường đầu tiên không hợp lệ hoặc null nếu hợp lệ.
      */
     public static String timTruongKhongDuocPhepCapNhatTaiKhoanQuanTri(Map<String, ?> payload) {
         return timTruongNgoaiDanhSachChoPhep(payload, CAC_TRUONG_CHO_PHEP_CAP_NHAT_TAI_KHOAN_QUAN_TRI);
@@ -269,9 +264,8 @@ public final class MaTranQuyenSprint2 {
             if (key == null) {
                 return "";
             }
-            String trimmed = key.trim();
-            if (trimmed.isEmpty() || !allowlist.contains(trimmed)) {
-                return trimmed;
+            if (!allowlist.contains(key)) {
+                return key;
             }
         }
         return null;
