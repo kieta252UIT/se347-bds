@@ -34,6 +34,19 @@ public class InMemoryLichSuXemRepository implements LichSuXemRepository {
     }
 
     @Override
+    public List<LichSuXem> findByTaiKhoanIdTrongKhoang(UUID taiKhoanId, Instant tuThoiDiem, Instant denThoiDiem) {
+        if (taiKhoanId == null || tuThoiDiem == null || denThoiDiem == null) {
+            return List.of();
+        }
+        return store.stream()
+                .filter(ls -> ls.taiKhoanId().equals(taiKhoanId))
+                .filter(ls -> !ls.thoiDiemXem().isBefore(tuThoiDiem) && !ls.thoiDiemXem().isAfter(denThoiDiem))
+                .sorted(java.util.Comparator.comparing(LichSuXem::thoiDiemXem).reversed())
+                .limit(100)
+                .toList();
+    }
+
+    @Override
     public List<UUID> findTaiKhoanCoTuongTacTrongKhoang(Instant tuThoiDiem, Instant denThoiDiem) {
         if (tuThoiDiem == null || denThoiDiem == null) {
             return List.of();

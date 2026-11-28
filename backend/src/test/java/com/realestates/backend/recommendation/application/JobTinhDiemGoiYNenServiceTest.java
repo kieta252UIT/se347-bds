@@ -121,4 +121,67 @@ class JobTinhDiemGoiYNenServiceTest {
         List<DiemGoiY> diemUser2 = diemGoiYRepository.findByTaiKhoanId(user2Id);
         assertTrue(diemUser2.isEmpty());
     }
+
+    @Test
+    @DisplayName("Duy trì cập nhật 5 phút kết hợp cửa sổ 30 ngày: Chỉ user có tương tác trong 5 phút được tính, và chỉ tương tác trong 30 ngày được xét")
+    void testDuyTriCapNhat5Phut_VaTinhDiemTrongCuaSo30Ngay() {
+        JobTinhDiemGoiYNenService jobService = new JobTinhDiemGoiYNenService(
+                leaseRepository, lichSuXemRepository, diemGoiYRepository, kiemTraTinAdapter,
+                thuatToanTinhDiem, fixedClock, "worker-node-2"
+        );
+
+        UUID userA = UUID.randomUUID();
+        UUID userB = UUID.randomUUID();
+
+        UUID tinCanHoQ1 = UUID.randomUUID();
+        UUID tinBietThuCuChi = UUID.randomUUID();
+
+        // Tin 1: Căn hộ Quận 1 (hợp lệ công khai)
+        kiemTraTinAdapter.mockThemTin(new ThongTinTinGoiY(
+                tinCanHoQ1, UUID.randomUUID(), "Căn hộ Q1", "Mô tả", "ban", "can_ho",
+                new BigDecimal("2000000000"), "vnd_tong", new BigDecimal("2000000000"),
+                BigDecimal.ZERO, new BigDecimal("50"), "Địa chỉ", "Quan 1",
+                ViTriToaDo.TOA_DO_MAC_DINH_TPHCM, now, null, "da_duyet", "hoat_dong", false
+        ));
+
+        // Tin 2: Biệt thự Củ Chi (hợp lệ công khai)
+        kiemTraTinAdapter.mockThemTin(new ThongTinTinGoiY(
+                tinBietThuCuChi, UUID.randomUUID(), "Biệt thự Củ Chi", "Mô tả", "ban", "biet_thu",
+                new BigDecimal("5000000000"), "vnd_tong", new BigDecimal("5000000000"),
+                BigDecimal.ZERO, new BigDecimal("200"), "Địa chỉ", "Cu Chi",
+                new ViTriToaDo(new BigDecimal("11.0000"), new BigDecimal("106.5000")), now, null, "da_duyet", "hoat_dong", false
+        ));
+
+        // User A:
+        // 1. Tương tác mới: Xem Căn hộ Q1 cách đây 3 phút (trong cửa sổ 5 phút)
+        lichSuXemRepository.save(new LichSuXem(UUID.randomUUID(), userA, tinCanHoQ1, now.minus(3, ChronoUnit.MINUTES)));
+        // 2. Tương tác cũ: Xem Biệt thự Củ Chi cách đây 45 ngày (quá hạn cửa sổ 30 ngày)
+        lichSuXemRepository.save(new LichSuXem(UUID.randomUUID(), userA, tinBietThuCuChi, now.minus(45, ChronoUnit.DAYS)));
+
+        // User B:
+        // Chỉ có tương tác cách đây 20 phút (ngoài cửa sổ 5 phút)
+        lichSuXemRepository.save(new LichSuXem(UUID.randomUUID(), userB, tinCanHoQ1, now.minus(20, ChronoUnit.MINUTES)));
+
+        // Kích hoạt chu kỳ chạy job không tham số (mặc định 5 phút & 30 ngày)
+        var ketQua = jobService.chayJobTinhDiemNen();
+
+        assertTrue(ketQua.thanhCong());
+        assertEquals(1, ketQua.soUserDaTinh(), "Chỉ có userA được tính vì có tương tác mới trong 5 phút");
+        assertEquals(2, ketQua.soDiemDaLuu(), "Đã lưu 2 điểm gợi ý nền cho 2 tin của userA");
+
+        // Lấy điểm nền của userA
+        var diemTinCanHoQ1 = diemGoiYRepository.findByTaiKhoanIdAndTinId(userA, tinCanHoQ1);
+        var diemTinBietThuCuChi = diemGoiYRepository.findByTaiKhoanIdAndTinId(userA, tinBietThuCuChi);
+
+        assertTrue(diemTinCanHoQ1.isPresent());
+        assertTrue(diemTinBietThuCuChi.isPresent());
+
+        // Do tương tác 45 ngày trước của Biệt thự Củ Chi bị loại khỏi cửa sổ 30 ngày,
+        // hồ sơ sở thích của userA là 100% can_ho tại Quan 1 -> Tin Căn hộ Q1 phải có điểm cao hơn nhiều
+        assertTrue(diemTinCanHoQ1.get().diem().compareTo(diemTinBietThuCuChi.get().diem()) > 0);
+
+        // User B không có tương tác mới trong 5 phút nên không phát sinh điểm nền mới
+        List<DiemGoiY> diemUserB = diemGoiYRepository.findByTaiKhoanId(userB);
+        assertTrue(diemUserB.isEmpty());
+    }
 }

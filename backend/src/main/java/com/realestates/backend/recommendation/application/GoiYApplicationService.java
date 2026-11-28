@@ -142,13 +142,23 @@ public class GoiYApplicationService {
             return Collections.emptyList();
         }
 
+        // Lọc BR-01 và BR-06 tại thời điểm đọc: chỉ tin da_duyet, chủ hoat_dong và không có gói tài trợ hiệu lực
+        List<ThongTinTinGoiY> danhSachHopLe = danhSachTin.stream()
+                .filter(ThongTinTinGoiY::hopLeCongKhaiBR01)
+                .filter(t -> !t.coGoiTaiTroHieuLuc())
+                .toList();
+
+        if (danhSachHopLe.isEmpty()) {
+            return Collections.emptyList();
+        }
+
         // Nếu là người dùng có danh tính: kiểm tra điểm nền
         if (taiKhoanId != null) {
             Map<UUID, BigDecimal> mapDiemNen = layMapDiemNen(taiKhoanId);
 
             if (!mapDiemNen.isEmpty()) {
                 // Có điểm nền: xếp hạng theo điểm nền giảm dần, khóa phụ là khoảng cách và độ mới
-                return danhSachTin.stream()
+                return danhSachHopLe.stream()
                         .map(tin -> {
                             BigDecimal khoangCach = tin.toaDo() != null
                                     ? tin.toaDo().tinhKhoangCachKm(toaDoApDung)
@@ -159,6 +169,7 @@ public class GoiYApplicationService {
                             );
                             return toDto(tin, khoangCach, diem, false);
                         })
+                        .filter(Objects::nonNull)
                         .sorted(Comparator.comparing(TinGoiYItemDto::diemGoiY, Comparator.reverseOrder())
                                 .thenComparing(TinGoiYItemDto::khoangCachKm)
                                 .thenComparing(TinGoiYItemDto::ngayDang, Comparator.reverseOrder())
@@ -168,8 +179,8 @@ public class GoiYApplicationService {
             }
         }
 
-        // Fallback: Khách hoặc Người mới chưa có điểm nền -> "Gần trước, mới sau"
-        return danhSachTin.stream()
+        // Fallback: Khách, Người mới chưa có điểm nền, hoặc Job lỗi -> "Gần trước, mới sau" (AC-03.2, AC-03.3)
+        return danhSachHopLe.stream()
                 .map(tin -> {
                     BigDecimal khoangCach = tin.toaDo() != null
                             ? tin.toaDo().tinhKhoangCachKm(toaDoApDung)
@@ -177,6 +188,7 @@ public class GoiYApplicationService {
                     BigDecimal diem = thuatToanTinhDiem.tinhDiemNguoiMoiHoacKhach(tin, toaDoApDung, now);
                     return toDto(tin, khoangCach, diem, false);
                 })
+                .filter(Objects::nonNull)
                 .sorted(Comparator.comparing(TinGoiYItemDto::khoangCachKm)
                         .thenComparing(TinGoiYItemDto::ngayDang, Comparator.reverseOrder())
                         .thenComparing(TinGoiYItemDto::tinId))
@@ -190,8 +202,18 @@ public class GoiYApplicationService {
             return Collections.emptyList();
         }
 
-        // Q16: Chọn ngẫu nhiên không lặp tối đa 5 tin, mọi tin có xác suất bằng nhau
-        List<ThongTinTinGoiY> danhSachXaoTron = new ArrayList<>(danhSachTaiTro);
+        // BR-01: Lọc tại thời điểm đọc chỉ giữ tin thỏa BR-01 và có gói đang hoạt động
+        List<ThongTinTinGoiY> danhSachHopLe = danhSachTaiTro.stream()
+                .filter(ThongTinTinGoiY::hopLeCongKhaiBR01)
+                .filter(ThongTinTinGoiY::coGoiTaiTroHieuLuc)
+                .toList();
+
+        if (danhSachHopLe.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // Q16 & BR-06: Chọn ngẫu nhiên không lặp tối đa 5 tin, mọi tin có xác suất bằng nhau
+        List<ThongTinTinGoiY> danhSachXaoTron = new ArrayList<>(danhSachHopLe);
         Collections.shuffle(danhSachXaoTron, random);
 
         return danhSachXaoTron.stream()
@@ -202,10 +224,14 @@ public class GoiYApplicationService {
                             : BigDecimal.valueOf(9999);
                     return toDto(tin, khoangCach, BigDecimal.valueOf(100), true);
                 })
+                .filter(Objects::nonNull)
                 .toList();
     }
 
     private TinGoiYItemDto toDto(ThongTinTinGoiY tin, BigDecimal khoangCachKm, BigDecimal diem, boolean duocTaiTro) {
+        if (tin == null || !tin.hopLeCongKhaiBR01()) {
+            return null;
+        }
         BigDecimal viDo = tin.toaDo() != null ? tin.toaDo().viDo() : null;
         BigDecimal kinhDo = tin.toaDo() != null ? tin.toaDo().kinhDo() : null;
         return new TinGoiYItemDto(

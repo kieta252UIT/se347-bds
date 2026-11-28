@@ -242,4 +242,94 @@ class GoiYApplicationServiceTest {
         assertEquals(tinTaiTroId, res.duocTaiTro().getFirst().tinId());
         assertTrue(res.duocTaiTro().getFirst().duocTaiTro());
     }
+
+    @Test
+    @DisplayName("AC-03.3 & BR-01: Chủ tin vừa bị khóa - Điểm nền cũ không được tái công khai tin khi đọc")
+    void testBR01_ChuBiKhoa_LoaiBoNgayLucDoc() {
+        when(permissionService.phanGiaiPrincipalTuyChonChoYeuCauCongKhai("valid-cookie")).thenReturn(Optional.of(principal));
+
+        UUID tinChuBiKhoaId = UUID.randomUUID();
+        // Tin da_duyet nhưng chủ tài khoản đã bị khóa (trang_thai = 'bi_khoa')
+        kiemTraTinAdapter.mockThemTin(new ThongTinTinGoiY(
+                tinChuBiKhoaId, UUID.randomUUID(), "Căn hộ của chủ bị khóa", "Mô tả", "ban", "can_ho",
+                new BigDecimal("2000000000"), "vnd_tong", new BigDecimal("2000000000"),
+                BigDecimal.ZERO, new BigDecimal("50"), "Địa chỉ", "Quan 1",
+                ViTriToaDo.TOA_DO_MAC_DINH_TPHCM, now, null, "da_duyet", "bi_khoa", false
+        ));
+
+        // Điểm nền có sẵn với điểm tuyệt đối 100đ
+        diemGoiYRepository.save(new DiemGoiY(userId, tinChuBiKhoaId, new BigDecimal("100.0000"), now));
+
+        GoiYResponse res = goiYApplicationService.layGoiY("valid-cookie", null);
+
+        // Tin của chủ bị khóa tuyệt đối không lọt vào danh sách tự nhiên lẫn tài trợ
+        assertTrue(res.goiYTuNhien().stream().noneMatch(t -> t.tinId().equals(tinChuBiKhoaId)));
+        assertTrue(res.duocTaiTro().stream().noneMatch(t -> t.tinId().equals(tinChuBiKhoaId)));
+    }
+
+    @Test
+    @DisplayName("AC-03.3: Job lỗi hoặc sự cố điểm nền - Hệ thống tự động fallback hợp lệ gần trước, mới sau")
+    void testAC03_3_FallbackKhiJobLoiHoacSuCoDiemNen() {
+        when(permissionService.phanGiaiPrincipalTuyChonChoYeuCauCongKhai("valid-cookie")).thenReturn(Optional.of(principal));
+
+        // Tin 1: Gần (Quận 1)
+        UUID tin1Id = UUID.randomUUID();
+        kiemTraTinAdapter.mockThemTin(new ThongTinTinGoiY(
+                tin1Id, UUID.randomUUID(), "Căn hộ Q1", "Mô tả", "ban", "can_ho",
+                new BigDecimal("2000000000"), "vnd_tong", new BigDecimal("2000000000"),
+                BigDecimal.ZERO, new BigDecimal("50"), "Địa chỉ", "Quan 1",
+                new ViTriToaDo(new BigDecimal("10.7800"), new BigDecimal("106.7020")),
+                now, null, "da_duyet", "hoat_dong", false
+        ));
+
+        // Tin 2: Xa (Cần Giờ)
+        UUID tin2Id = UUID.randomUUID();
+        kiemTraTinAdapter.mockThemTin(new ThongTinTinGoiY(
+                tin2Id, UUID.randomUUID(), "Đất Cần Giờ", "Mô tả", "ban", "dat_nen",
+                new BigDecimal("1000000000"), "vnd_tong", new BigDecimal("1000000000"),
+                BigDecimal.ZERO, new BigDecimal("100"), "Địa chỉ", "Can Gio",
+                new ViTriToaDo(new BigDecimal("10.4000"), new BigDecimal("106.9000")),
+                now, null, "da_duyet", "hoat_dong", false
+        ));
+
+        // Repository điểm nền ném ngoại lệ mô phỏng lỗi DB/Job nền
+        var mockDiemRepo = mock(com.realestates.backend.recommendation.domain.DiemGoiYRepository.class);
+        when(mockDiemRepo.findByTaiKhoanId(userId)).thenThrow(new RuntimeException("CSDL điểm nền bị gián đoạn"));
+
+        GoiYApplicationService serviceFallback = new GoiYApplicationService(
+                permissionService,
+                kiemTraTinAdapter,
+                mockDiemRepo,
+                thuatToanTinhDiem,
+                fixedClock,
+                random
+        );
+
+        GoiYResponse res = serviceFallback.layGoiY("valid-cookie", null);
+
+        assertNotNull(res);
+        assertEquals(2, res.tongSoTuNhien());
+        // Fallback gần trước: Tin 1 gần hơn xếp đầu
+        assertEquals(tin1Id, res.goiYTuNhien().getFirst().tinId());
+    }
+
+    @Test
+    @DisplayName("AC-03.1: Ngữ cảnh C3 - Người dùng đăng nhập không gửi GPS -> Sử dụng tọa độ mặc định TP.HCM")
+    void testGoiY_NguCanhC3_NguoiDungKhongGps() {
+        when(permissionService.phanGiaiPrincipalTuyChonChoYeuCauCongKhai("valid-cookie")).thenReturn(Optional.of(principal));
+
+        UUID tinId = UUID.randomUUID();
+        kiemTraTinAdapter.mockThemTin(new ThongTinTinGoiY(
+                tinId, UUID.randomUUID(), "Căn hộ Q1", "Mô tả", "ban", "can_ho",
+                new BigDecimal("2000000000"), "vnd_tong", new BigDecimal("2000000000"),
+                BigDecimal.ZERO, new BigDecimal("50"), "Địa chỉ", "Quan 1",
+                ViTriToaDo.TOA_DO_MAC_DINH_TPHCM, now, null, "da_duyet", "hoat_dong", false
+        ));
+
+        GoiYResponse res = goiYApplicationService.layGoiY("valid-cookie", null);
+
+        assertEquals(GoiYApplicationService.NGU_CANH_C3_NGUOI_DUNG_KHONG_GPS, res.nguCanh());
+        assertTrue(res.dungViTriMacDinh());
+        assertEquals(1, res.tongSoTuNhien());
+    }
 }

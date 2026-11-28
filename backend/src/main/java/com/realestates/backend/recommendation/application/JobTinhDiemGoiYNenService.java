@@ -32,6 +32,8 @@ import org.springframework.stereotype.Service;
 public class JobTinhDiemGoiYNenService {
 
     public static final String TEN_JOB = "JOB_TINH_DIEM_GOI_Y";
+    public static final Duration CUA_SO_CAP_NHAT_MAC_DINH_5_PHUT = Duration.ofMinutes(5);
+    public static final Duration CUA_SO_LICH_SU_MAC_DINH_30_NGAY = Duration.ofDays(30);
     private static final Logger log = LoggerFactory.getLogger(JobTinhDiemGoiYNenService.class);
 
     private final JobLeaseRepository jobLeaseRepository;
@@ -110,9 +112,10 @@ public class JobTinhDiemGoiYNenService {
         }
 
         try {
-            // 2. Quét danh sách người dùng có tương tác trong cửa sổ thời gian (mặc định 5 phút theo Q28)
-            Instant tuThoiDiem = now.minus(cuaSoCapNhatTuongTac != null ? cuaSoCapNhatTuongTac : Duration.ofMinutes(5));
-            List<UUID> danhSachUserId = lichSuXemRepository.findTaiKhoanCoTuongTacTrongKhoang(tuThoiDiem, now);
+            // 2. Quét danh sách người dùng có tương tác trong cửa sổ thời gian (duy trì cập nhật 5 phút theo AC-03.2 & Q28)
+            Duration cuaSoQuet = cuaSoCapNhatTuongTac != null ? cuaSoCapNhatTuongTac : CUA_SO_CAP_NHAT_MAC_DINH_5_PHUT;
+            Instant tuThoiDiemQuet = now.minus(cuaSoQuet);
+            List<UUID> danhSachUserId = lichSuXemRepository.findTaiKhoanCoTuongTacTrongKhoang(tuThoiDiemQuet, now);
 
             if (danhSachUserId.isEmpty()) {
                 jobLeaseRepository.releaseLease(TEN_JOB, instanceId, now);
@@ -126,16 +129,18 @@ public class JobTinhDiemGoiYNenService {
 
             int tongDiemDaLuu = 0;
 
-            // 4. Tính toán điểm cho từng user
+            // 4. Tính toán điểm cho từng user trong cửa sổ trượt 30 ngày (Sliding Window 30 days)
+            Instant tuThoiDiem30Ngay = now.minus(CUA_SO_LICH_SU_MAC_DINH_30_NGAY);
             for (UUID userId : danhSachUserId) {
-                List<LichSuXem> lichSu = lichSuXemRepository.findByTaiKhoanId(userId);
+                // Lấy lịch sử tương tác trong cửa sổ 30 ngày (loại bỏ tương tác cũ hơn 30 ngày)
+                List<LichSuXem> lichSu30Ngay = lichSuXemRepository.findByTaiKhoanIdTrongKhoang(userId, tuThoiDiem30Ngay, now);
                 List<DiemGoiY> danhSachDiemMoi = new ArrayList<>();
 
                 for (ThongTinTinGoiY tin : danhSachTin) {
                     BigDecimal diem = thuatToanTinhDiem.tinhDiemTongHop(
                             tin,
                             ViTriToaDo.TOA_DO_MAC_DINH_TPHCM, // vị trí mặc định người dùng
-                            lichSu,
+                            lichSu30Ngay,
                             mapTin,
                             now
                     );
@@ -164,12 +169,19 @@ public class JobTinhDiemGoiYNenService {
     }
 
     /**
+     * Chạy chu kỳ tính điểm nền với cửa sổ cập nhật mặc định 5 phút và cửa sổ lịch sử 30 ngày.
+     */
+    public KetQuaChayJob chayJobTinhDiemNen() {
+        return chayJobTinhDiemNen(CUA_SO_CAP_NHAT_MAC_DINH_5_PHUT);
+    }
+
+    /**
      * Tự động kích hoạt job theo lịch định kỳ (mặc định 5 phút = 300.000 ms theo Q28 & SDD-23).
      */
     @Scheduled(fixedDelayString = "${app.recommendation.job-interval-ms:300000}")
     public void scheduledRun() {
         try {
-            chayJobTinhDiemNen(Duration.ofMinutes(5));
+            chayJobTinhDiemNen();
         } catch (Exception e) {
             log.warn("Lỗi khi chạy scheduled job tính điểm nền: {}", e.getMessage());
         }

@@ -65,6 +65,29 @@ public class PostgreSqlLichSuXemRepository implements LichSuXemRepository {
     }
 
     @Override
+    public List<LichSuXem> findByTaiKhoanIdTrongKhoang(UUID taiKhoanId, Instant tuThoiDiem, Instant denThoiDiem) {
+        if (taiKhoanId == null || tuThoiDiem == null || denThoiDiem == null) {
+            return List.of();
+        }
+        String sql = """
+                SELECT id, tai_khoan_id, tin_id, thoi_diem_xem
+                FROM se214.lich_su_xem
+                WHERE tai_khoan_id = ?
+                  AND thoi_diem_xem >= ?
+                  AND thoi_diem_xem <= ?
+                ORDER BY thoi_diem_xem DESC
+                LIMIT 100
+                """;
+        return jdbcTemplate.query(
+                sql,
+                ROW_MAPPER,
+                taiKhoanId,
+                Timestamp.from(tuThoiDiem),
+                Timestamp.from(denThoiDiem)
+        );
+    }
+
+    @Override
     public List<UUID> findTaiKhoanCoTuongTacTrongKhoang(Instant tuThoiDiem, Instant denThoiDiem) {
         if (tuThoiDiem == null || denThoiDiem == null) {
             return List.of();

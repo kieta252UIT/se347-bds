@@ -228,4 +228,31 @@ class GoiYApiTests {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.maLoi").value("KHONG_TIM_THAY"));
     }
+
+    @Test
+    @DisplayName("API GET /api/recommendations - Lọc chặt chẽ BR-01 và BR-06 ngay lúc đọc")
+    void testApiGetRecommendations_LocBR01VaBR06KhiDoc() throws Exception {
+        Mockito.when(permissionService.phanGiaiPrincipalTuyChonChoYeuCauCongKhai(null))
+                .thenReturn(Optional.empty());
+
+        // Tin C: Bị gỡ do vi phạm
+        UUID tinViPham = UUID.randomUUID();
+        kiemTraTinAdapter.mockThemTin(new ThongTinTinGoiY(
+                tinViPham, UUID.randomUUID(), "Tin vi phạm", "Mô tả", "ban", "can_ho",
+                new BigDecimal("2000000000"), "vnd_tong", new BigDecimal("2000000000"),
+                BigDecimal.ZERO, new BigDecimal("50"), "Địa chỉ", "Quan 1",
+                ViTriToaDo.TOA_DO_MAC_DINH_TPHCM, now, null, "bi_go_vi_pham", "hoat_dong", false
+        ));
+
+        // Gọi API GET gợi ý
+        mockMvc.perform(get("/api/recommendations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tongSoTuNhien").value(1))
+                .andExpect(jsonPath("$.goiYTuNhien[0].tinId").value(tinThuongId.toString()))
+                .andExpect(jsonPath("$.tongSoTaiTro").value(1))
+                .andExpect(jsonPath("$.duocTaiTro[0].tinId").value(tinTaiTroId.toString()))
+                // Tin vi phạm tuyệt đối không có mặt trong cả 2 danh sách
+                .andExpect(jsonPath("$.goiYTuNhien[?(@.tinId == '%s')]".formatted(tinViPham)).doesNotExist())
+                .andExpect(jsonPath("$.duocTaiTro[?(@.tinId == '%s')]".formatted(tinViPham)).doesNotExist());
+    }
 }
