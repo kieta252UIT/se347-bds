@@ -15,9 +15,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@RequestMapping("/api")
 public class ViDienTuController {
 
     private final ViDienTuApplicationService viDienTuApplicationService;
@@ -32,7 +34,7 @@ public class ViDienTuController {
     }
 
     @GetMapping(
-            value = {"/api/me/wallet", "/api/wallet/me"},
+            value = {"/me/wallet", "/wallet/me"},
             produces = MediaType.APPLICATION_JSON_VALUE
     )
     public ResponseEntity<ViDienTuResponse> layViCuaToi(HttpServletRequest request) {
@@ -48,7 +50,7 @@ public class ViDienTuController {
     }
 
     @PostMapping(
-            value = {"/api/me/wallet/seed-test-balance", "/api/wallet/seed-test-balance"},
+            value = {"/me/wallet/seed-test-balance", "/wallet/seed-test-balance"},
             produces = MediaType.APPLICATION_JSON_VALUE
     )
     public ResponseEntity<ViDienTuResponse> khoiTaoSoDuThu(

@@ -48,10 +48,16 @@ TO se214_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON se214.anh_tin TO se214_runtime;
 GRANT SELECT, INSERT, DELETE ON se214.yeu_thich_tin TO se214_runtime;
 
--- Sprint 1 chi doc/cap nhat goi va bao cao da khoi tao boi fixture/quan tri.
-GRANT SELECT, UPDATE ON se214.goi_day_tin, se214.bao_cao_vi_pham TO se214_runtime;
+-- Sprint 1 & Sprint 2 (V4 Ví & Gói đẩy tin): cấp quyền cho các bảng ví, sổ giao dịch, lần mua gói và gói đẩy tin.
+GRANT SELECT, UPDATE ON se214.bao_cao_vi_pham TO se214_runtime;
+GRANT SELECT, INSERT, UPDATE ON
+    se214.goi_day_tin,
+    se214.vi_dien_tu
+TO se214_runtime;
 GRANT SELECT, INSERT ON
     se214.su_kien_goi,
+    se214.giao_dich_vi,
+    se214.lan_mua_goi,
     se214.yeu_cau_ghi,
     se214.nhat_ky_kiem_toan
 TO se214_runtime;

@@ -14,6 +14,7 @@ import com.realestates.backend.auth.domain.VaiTroTaiKhoan;
 import com.realestates.backend.auth.infrastructure.DefaultAuthBrowserSessionLifecycleAdapter;
 import com.realestates.backend.auth.infrastructure.InMemoryPhienXacThucRepository;
 import com.realestates.backend.auth.infrastructure.InMemoryTaiKhoanRepository;
+import com.realestates.backend.wallet.domain.GiaoDichVi;
 import com.realestates.backend.wallet.domain.GoiDayTin;
 import com.realestates.backend.wallet.domain.ViDienTu;
 import com.realestates.backend.wallet.dto.KetQuaMuaGoiResponse;
@@ -34,12 +35,14 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 
 class QuanLyGoiDayTinApplicationServiceTest {
 
@@ -323,5 +326,177 @@ class QuanLyGoiDayTinApplicationServiceTest {
                 .filter(g -> "tru".equals(g.chieuBienDong()))
                 .toList();
         assertEquals(1, listTru.size());
+    }
+
+    @Test
+    @DisplayName("Review PR #26 Điểm 2: Replay đọc chính xác ket_qua_json định dạng jsonb của PostgreSQL (có khoảng trắng sau dấu hai chấm)")
+    void testReplay_DocChinhXacKetQuaJsonDinhDangPostgresJsonbCoKhoangTrang() {
+        viDienTuService.khoiTaoSoDuThuNhatQuan(chuId, new BigDecimal("500000"), "Số dư thử");
+
+        String maYDinh = "INTENT_JSONB_WHITESPACE";
+        YeuCauMuaGoiRequest req = new YeuCauMuaGoiRequest("GOI_7_NGAY", maYDinh, false);
+        KetQuaMuaGoiResponse resGoc = goiDayTinService.muaGoi(cookieChinhChu, tinId, req);
+
+        ViDienTu vi = viDienTuRepository.findByTaiKhoanId(chuId).orElseThrow();
+        GiaoDichVi gdGoc = giaoDichViRepository.findByViIdAndLoaiAndMaYDinh(vi.id(), "mua_goi", maYDinh).orElseThrow();
+
+        // Mô phỏng PostgreSQL jsonb trả về chuỗi JSON có khoảng trắng sau dấu ':' và thứ tự key bất kỳ
+        String postgresJsonbFormatted = "{ \"thoiLuongConLaiGiay\": " + resGoc.goi().thoiLuongConLaiGiay()
+                + ", \"goiId\": \"" + resGoc.goi().id()
+                + "\", \"lanMuaId\": \"" + resGoc.lanMuaId()
+                + "\", \"trangThaiGoi\": \"dang_hoat_dong\""
+                + ", \"hetHanLuc\": \"" + resGoc.goi().hetHanLuc()
+                + "\", \"soDuSauVnd\": \"451000\" }";
+
+        giaoDichViRepository.clear();
+        lanMuaGoiRepository.clear();
+        goiDayTinRepository.clear();
+
+        GiaoDichVi gdTuPostgresJsonb = new GiaoDichVi(
+                gdGoc.id(),
+                gdGoc.viId(),
+                gdGoc.loai(),
+                gdGoc.trangThai(),
+                gdGoc.chieuBienDong(),
+                gdGoc.soTien(),
+                gdGoc.soDuTruoc(),
+                gdGoc.soDuSau(),
+                gdGoc.maYDinh(),
+                gdGoc.duLieuBam(),
+                postgresJsonbFormatted,
+                gdGoc.giaoDichGocId(),
+                gdGoc.maThuTienCong(),
+                gdGoc.thoiDiemGhiNhan(),
+                gdGoc.ghiChu()
+        );
+        giaoDichViRepository.save(gdTuPostgresJsonb);
+
+        // Ngay cả khi goiDayTinRepository đã đổi trạng thái về sau, Replay phải khôi phục đúng 100% từ ket_qua_json jsonb
+        KetQuaMuaGoiResponse resReplay = goiDayTinService.muaGoi(cookieChinhChu, tinId, req);
+        assertEquals(resGoc.maGiaoDich(), resReplay.maGiaoDich());
+        assertEquals(resGoc.lanMuaId(), resReplay.lanMuaId());
+        assertEquals(new BigDecimal("451000"), resReplay.soDuConLaiVnd());
+        assertEquals(resGoc.goi().id(), resReplay.goi().id());
+        assertEquals("dang_hoat_dong", resReplay.goi().trangThai());
+        assertEquals(resGoc.goi().hetHanLuc(), resReplay.goi().hetHanLuc());
+        assertEquals(resGoc.goi().thoiLuongConLaiGiay(), resReplay.goi().thoiLuongConLaiGiay());
+    }
+
+    @Test
+    @DisplayName("Review PR #26 Điểm 3: Thứ tự khóa đúng tai_khoan -> phien_xac_thuc -> vi_dien_tu -> tin_bat_dong_san -> goi_day_tin và InMemory chặn trùng unique")
+    void testThuTuKhoaVaInMemoryUniqueConstraints() {
+        List<String> lockSteps = new ArrayList<>();
+
+        InMemoryTaiKhoanRepository trackingTaiKhoanRepo = new InMemoryTaiKhoanRepository() {
+            @Override
+            public Optional<TaiKhoan> findByIdForUpdate(UUID id) {
+                lockSteps.add("1:tai_khoan");
+                return super.findByIdForUpdate(id);
+            }
+        };
+        InMemoryPhienXacThucRepository trackingPhienRepo = new InMemoryPhienXacThucRepository() {
+            @Override
+            public Optional<PhienXacThuc> findByIdForUpdate(UUID id) {
+                lockSteps.add("2:phien_xac_thuc");
+                return super.findByIdForUpdate(id);
+            }
+        };
+        InMemoryViDienTuRepository trackingViRepo = new InMemoryViDienTuRepository() {
+            @Override
+            public synchronized Optional<ViDienTu> findByTaiKhoanIdForUpdate(UUID taiKhoanId) {
+                lockSteps.add("4:vi_dien_tu");
+                return super.findByTaiKhoanIdForUpdate(taiKhoanId);
+            }
+        };
+        InMemoryKiemTraTinAdapter trackingTinAdapter = new InMemoryKiemTraTinAdapter(Optional.empty()) {
+            @Override
+            public Optional<ThongTinTinKiemTra> khoaVaDocThongTinTin(UUID id) {
+                lockSteps.add("6:tin_bat_dong_san");
+                return super.khoaVaDocThongTinTin(id);
+            }
+        };
+        InMemoryGoiDayTinRepository trackingGoiRepo = new InMemoryGoiDayTinRepository() {
+            @Override
+            public synchronized Optional<GoiDayTin> findGoiChuaKetThucForUpdate(UUID id) {
+                lockSteps.add("8:goi_day_tin");
+                return super.findGoiChuaKetThucForUpdate(id);
+            }
+        };
+
+        DefaultAuthBrowserSessionLifecycleAdapter trackingSessionAdapter = new DefaultAuthBrowserSessionLifecycleAdapter(
+                "TEST_CSRF_HMAC_SECRET_KEY_32_BYTES_MINIMUM",
+                trackingPhienRepo
+        );
+        CurrentPermissionAndCsrfService trackingPermService = new CurrentPermissionAndCsrfService(
+                trackingTaiKhoanRepo,
+                trackingPhienRepo,
+                trackingSessionAdapter,
+                List.of("https://localhost")
+        );
+        QuanLyGoiDayTinApplicationService trackingGoiService = new QuanLyGoiDayTinApplicationService(
+                trackingPermService,
+                trackingTaiKhoanRepo,
+                trackingTinAdapter,
+                trackingViRepo,
+                giaoDichViRepository,
+                trackingGoiRepo,
+                lanMuaGoiRepository,
+                fixedClock
+        );
+
+        TaiKhoan tk = TaiKhoan.taoNguoiDungDaXacMinh(chuId, UUID.randomUUID(), "lock@example.com", "Lock Owner", "0901234567", nowFixed);
+        trackingTaiKhoanRepo.save(tk);
+        String rawCookie = trackingSessionAdapter.generateRawSessionCookie();
+        trackingPhienRepo.save(PhienXacThuc.taoPhienMoi(
+                UUID.randomUUID(),
+                chuId,
+                trackingSessionAdapter.hashSessionCookie(rawCookie),
+                0L,
+                nowFixed,
+                UUID.randomUUID(),
+                "a".getBytes(StandardCharsets.UTF_8),
+                "r".getBytes(StandardCharsets.UTF_8),
+                nowFixed.plusSeconds(3600),
+                "v1"
+        ));
+        trackingTinAdapter.mockTin(tinId, chuId, "da_duyet");
+        trackingViRepo.save(new ViDienTu(UUID.randomUUID(), chuId, new BigDecimal("500000"), nowFixed, nowFixed));
+
+        lockSteps.clear();
+        trackingGoiService.muaGoi(rawCookie, tinId, new YeuCauMuaGoiRequest("GOI_7_NGAY", "INTENT_LOCK_ORDER", false));
+
+        assertEquals(
+                List.of("1:tai_khoan", "2:phien_xac_thuc", "4:vi_dien_tu", "6:tin_bat_dong_san", "8:goi_day_tin"),
+                lockSteps,
+                "Thứ tự khóa phải tuân thủ tuyệt đối tai_khoan -> phien_xac_thuc -> vi_dien_tu -> tin_bat_dong_san -> goi_day_tin"
+        );
+
+        // Kiểm tra InMemoryGoiDayTinRepository chặn lưu gói chưa kết thúc thứ 2 trên cùng tin
+        assertThrows(
+                DuplicateKeyException.class,
+                () -> trackingGoiRepo.save(GoiDayTin.taoMoiDangHoatDong(tinId, Duration.ofDays(7), nowFixed))
+        );
+
+        // Kiểm tra InMemoryViDienTuRepository chặn lưu ví thứ 2 cho cùng tài khoản
+        assertThrows(
+                DuplicateKeyException.class,
+                () -> trackingViRepo.save(ViDienTu.khoiTao(chuId))
+        );
+
+        // Kiểm tra InMemoryGiaoDichViRepository chặn lưu bút toán trùng (vi_id, loai, ma_y_dinh)
+        ViDienTu viHienTai = trackingViRepo.findByTaiKhoanId(chuId).orElseThrow();
+        assertThrows(
+                DuplicateKeyException.class,
+                () -> giaoDichViRepository.save(GiaoDichVi.taoButToanTruTien(
+                        viHienTai.id(),
+                        "mua_goi",
+                        new BigDecimal("49000"),
+                        new BigDecimal("500000"),
+                        new BigDecimal("451000"),
+                        "INTENT_LOCK_ORDER",
+                        "Trùng mã ý định",
+                        nowFixed
+                ))
+        );
     }
 }
