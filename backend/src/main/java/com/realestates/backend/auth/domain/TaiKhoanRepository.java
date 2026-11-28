@@ -1,6 +1,8 @@
 package com.realestates.backend.auth.domain;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +18,23 @@ public interface TaiKhoanRepository {
 
     default Optional<TaiKhoan> findByIdForUpdate(UUID id) {
         return findById(id);
+    }
+
+    /**
+     * Đọc và khóa dòng nhiều tài khoản theo đúng thứ tự byte không dấu của UUID
+     * (khớp tuyệt đối với {@code ORDER BY id ASC FOR UPDATE} trên PostgreSQL) để chống Deadlock
+     * khi một giao dịch tác động hoặc tham chiếu khóa ngoại tới nhiều tài khoản (S2-02 Bảng 4).
+     */
+    default List<TaiKhoan> findAllByIdsForUpdateInOrder(Collection<UUID> ids) {
+        List<UUID> sortedIds = MaTranQuyenSprint2.sapXepThuTuKhoaUuid(ids);
+        if (sortedIds.isEmpty()) {
+            return List.of();
+        }
+        List<TaiKhoan> results = new ArrayList<>(sortedIds.size());
+        for (UUID id : sortedIds) {
+            findByIdForUpdate(id).ifPresent(results::add);
+        }
+        return List.copyOf(results);
     }
 
     default DataSource getDataSource() {

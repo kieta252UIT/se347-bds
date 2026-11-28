@@ -65,6 +65,17 @@ public class PostgreSqlTaiKhoanRepository implements TaiKhoanRepository {
     }
 
     @Override
+    public java.util.List<TaiKhoan> findAllByIdsForUpdateInOrder(java.util.Collection<UUID> ids) {
+        java.util.List<UUID> sortedIds = com.realestates.backend.auth.domain.MaTranQuyenSprint2.sapXepThuTuKhoaUuid(ids);
+        if (sortedIds.isEmpty()) {
+            return java.util.List.of();
+        }
+        String placeholders = String.join(", ", java.util.Collections.nCopies(sortedIds.size(), "?"));
+        String sql = "SELECT * FROM se214.tai_khoan WHERE id IN (" + placeholders + ") ORDER BY id ASC FOR UPDATE";
+        return jdbcTemplate.query(sql, ACCOUNT_ROW_MAPPER, sortedIds.toArray());
+    }
+
+    @Override
     public DataSource getDataSource() {
         return jdbcTemplate.getDataSource();
     }
