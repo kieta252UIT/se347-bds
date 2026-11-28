@@ -13,9 +13,11 @@ import com.realestates.backend.auth.domain.TaiKhoan;
 import com.realestates.backend.auth.domain.ThaoTacNghiepVu;
 import com.realestates.backend.auth.domain.TrangThaiTaiKhoan;
 import com.realestates.backend.auth.domain.VaiTroTaiKhoan;
+import com.realestates.backend.auth.exception.AccountLockedException;
 import com.realestates.backend.auth.exception.AuthProviderUnavailableException;
 import com.realestates.backend.auth.exception.AuthValidationException;
 import com.realestates.backend.auth.exception.InsufficientPermissionException;
+import com.realestates.backend.auth.exception.UnauthenticatedSessionException;
 import com.realestates.backend.auth.infrastructure.DefaultAuthBrowserSessionLifecycleAdapter;
 import com.realestates.backend.auth.infrastructure.InMemoryPhienXacThucRepository;
 import com.realestates.backend.auth.infrastructure.InMemoryTaiKhoanRepository;
@@ -657,6 +659,233 @@ class MaTranQuyenSprint2UnitTest {
                 Map.of("tieuDe", "Sửa tin người khác"),
                 p -> "NEVER"
         )).isInstanceOf(InsufficientPermissionException.class);
+    }
+
+    @Test
+    @DisplayName("PR #24 Review (Mục 2): Xác thực phiên & vai trò RBAC chạy trước kiểm tra allowlist/blacklist payload để ngăn khách hoặc sai vai trò dò cấu trúc DTO quản trị")
+    void sessionAndRoleCheckedBeforePayloadAllowlistToPreventProbing() {
+        InMemoryTaiKhoanRepository taiKhoanRepo = new InMemoryTaiKhoanRepository();
+        InMemoryPhienXacThucRepository phienRepo = new InMemoryPhienXacThucRepository();
+        DefaultAuthBrowserSessionLifecycleAdapter sessionAdapter = new DefaultAuthBrowserSessionLifecycleAdapter(
+                "TEST_CSRF_HMAC_SECRET_KEY_32_BYTES_MINIMUM",
+                phienRepo
+        );
+        CurrentPermissionAndCsrfService service = new CurrentPermissionAndCsrfService(
+                taiKhoanRepo,
+                phienRepo,
+                sessionAdapter,
+                List.of("https://localhost")
+        );
+
+        UUID userId = UUID.randomUUID();
+        UUID lockedId = UUID.randomUUID();
+        UUID adminId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+
+        String cookieUser = seedAccountWithRole(taiKhoanRepo, phienRepo, sessionAdapter, userId, "normal@example.com", VaiTroTaiKhoan.NGUOI_DUNG);
+        String cookieLocked = seedAccountWithRole(taiKhoanRepo, phienRepo, sessionAdapter, lockedId, "locked@example.com", VaiTroTaiKhoan.QUAN_TRI_VIEN);
+        String cookieAdmin = seedAccountWithRole(taiKhoanRepo, phienRepo, sessionAdapter, adminId, "admin@example.com", VaiTroTaiKhoan.QUAN_TRI_VIEN);
+
+        // Khóa tài khoản lockedId nhưng cố tình giữ nguyên một phiên chưa thu hồi trực tiếp để thử nhánh 403 TAI_KHOAN_BI_KHOA
+        TaiKhoan lockedAccount = taiKhoanRepo.findById(lockedId).orElseThrow()
+                .capNhatTrangThai(TrangThaiTaiKhoan.BI_KHOA, Instant.now());
+        taiKhoanRepo.save(lockedAccount);
+
+        Map<String, Object> probingPayload = Map.of("action", "lock", "truongLa", 123);
+
+        // 1. Khách chưa đăng nhập (null cookie) -> 401 UnauthenticatedSessionException (KHÔNG lộ 400 allowlist)
+        assertThatThrownBy(() -> service.thucThiGhiNhieuTaiKhoanCoKiemLaiQuyenTrongTransaction(
+                null,
+                ThaoTacNghiepVu.CAP_NHAT_HO_SO_VA_VAI_TRO_QUAN_TRI,
+                List.of(targetId),
+                null,
+                null,
+                CurrentPermissionAndCsrfService::kiemTraTruongChoPhepCapNhatTaiKhoanQuanTri,
+                probingPayload,
+                (p, m) -> "NEVER"
+        )).isInstanceOf(UnauthenticatedSessionException.class);
+
+        assertThatThrownBy(() -> service.kiemTraQuyenThaoTac(
+                null,
+                ThaoTacNghiepVu.TAO_CAP_NHAT_KHOA_MO_KHOA_TAI_KHOAN,
+                null,
+                Map.of("vaiTro", "quan_tri_vien")
+        )).isInstanceOf(UnauthenticatedSessionException.class);
+
+        // 2. Tài khoản bị khóa -> 403 AccountLockedException trước khi kiểm tra allowlist
+        assertThatThrownBy(() -> service.thucThiGhiNhieuTaiKhoanCoKiemLaiQuyenTrongTransaction(
+                cookieLocked,
+                ThaoTacNghiepVu.TAO_CAP_NHAT_KHOA_MO_KHOA_TAI_KHOAN,
+                List.of(),
+                null,
+                null,
+                CurrentPermissionAndCsrfService::kiemTraTruongChoPhepTaoTaiKhoanQuanTri,
+                probingPayload,
+                (p, m) -> "NEVER"
+        )).isInstanceOf(AccountLockedException.class);
+
+        // 3. Người dùng thường gọi endpoint Quản trị -> 403 InsufficientPermissionException trước khi kiểm tra allowlist
+        assertThatThrownBy(() -> service.thucThiGhiNhieuTaiKhoanCoKiemLaiQuyenTrongTransaction(
+                cookieUser,
+                ThaoTacNghiepVu.CAP_NHAT_HO_SO_VA_VAI_TRO_QUAN_TRI,
+                List.of(targetId),
+                null,
+                null,
+                CurrentPermissionAndCsrfService::kiemTraTruongChoPhepCapNhatTaiKhoanQuanTri,
+                probingPayload,
+                (p, m) -> "NEVER"
+        )).isInstanceOf(InsufficientPermissionException.class);
+
+        assertThatThrownBy(() -> service.kiemTraQuyenThaoTacCheTonTaiTaiNguyen(
+                cookieAdmin,
+                ThaoTacNghiepVu.XEM_BAO_GIA_GOI_DAY_TIN,
+                () -> targetId,
+                ListingNotFoundException::new,
+                Map.of("vaiTro", "nguoi_dung")
+        )).isInstanceOf(InsufficientPermissionException.class);
+
+        // 4. Quản trị viên hợp lệ gửi trường lạ -> bị chặn đúng 400 AuthValidationException từ allowlist
+        assertThatThrownBy(() -> service.thucThiGhiNhieuTaiKhoanCoKiemLaiQuyenTrongTransaction(
+                cookieAdmin,
+                ThaoTacNghiepVu.CAP_NHAT_HO_SO_VA_VAI_TRO_QUAN_TRI,
+                List.of(targetId),
+                null,
+                null,
+                CurrentPermissionAndCsrfService::kiemTraTruongChoPhepCapNhatTaiKhoanQuanTri,
+                probingPayload,
+                (p, m) -> "NEVER"
+        )).isInstanceOf(AuthValidationException.class);
+
+        // 5. Endpoint công khai cho phép khách vẫn chặn trường tự khai bị cấm với 400 AuthValidationException
+        assertThatThrownBy(() -> service.kiemTraQuyenThaoTac(
+                null,
+                ThaoTacNghiepVu.XEM_GOI_Y_BAT_DONG_SAN,
+                null,
+                Map.of("vaiTro", "quan_tri_vien")
+        )).isInstanceOf(AuthValidationException.class);
+    }
+
+    @Test
+    @DisplayName("PR #24 Review (Mục 1): khoaTaiKhoanNguyenTu khử trùng ID phiên qua sapXepThuTuKhoaUuid và thu hồi theo đúng thứ tự UUID không dấu")
+    void khoaTaiKhoanNguyenTuDeduplicatesSessionIdsInUnsignedOrder() {
+        UUID userId = UUID.randomUUID();
+        InMemoryTaiKhoanRepository taiKhoanRepo = new InMemoryTaiKhoanRepository();
+        InMemoryPhienXacThucRepository basePhienRepo = new InMemoryPhienXacThucRepository();
+        DefaultAuthBrowserSessionLifecycleAdapter sessionAdapter = new DefaultAuthBrowserSessionLifecycleAdapter(
+                "TEST_CSRF_HMAC_SECRET_KEY_32_BYTES_MINIMUM",
+                basePhienRepo
+        );
+
+        Instant now = Instant.now();
+        taiKhoanRepo.save(TaiKhoan.khoiPhucTuLuuTru(
+                userId,
+                UUID.randomUUID(),
+                "dedup.session@example.com",
+                "Dedup Session User",
+                "0901234567",
+                VaiTroTaiKhoan.NGUOI_DUNG,
+                TrangThaiTaiKhoan.HOAT_DONG,
+                true,
+                0L,
+                "san_sang",
+                now,
+                now,
+                now
+        ));
+
+        UUID lowSessionId = UUID.fromString("208d0f5f-99b8-42d3-8e89-b30d1e1f861e");
+        UUID highSessionId = UUID.fromString("bfd23ad3-a23e-4b36-b736-a947d8237389");
+
+        PhienXacThuc lowSession = PhienXacThuc.taoPhienMoi(
+                lowSessionId,
+                userId,
+                sessionAdapter.hashSessionCookie(sessionAdapter.generateRawSessionCookie()),
+                0L,
+                now,
+                UUID.randomUUID(),
+                "a1".getBytes(StandardCharsets.UTF_8),
+                "r1".getBytes(StandardCharsets.UTF_8),
+                now.plusSeconds(3600),
+                "v1"
+        );
+        PhienXacThuc highSession = PhienXacThuc.taoPhienMoi(
+                highSessionId,
+                userId,
+                sessionAdapter.hashSessionCookie(sessionAdapter.generateRawSessionCookie()),
+                0L,
+                now,
+                UUID.randomUUID(),
+                "a2".getBytes(StandardCharsets.UTF_8),
+                "r2".getBytes(StandardCharsets.UTF_8),
+                now.plusSeconds(3600),
+                "v1"
+        );
+        basePhienRepo.save(lowSession);
+        basePhienRepo.save(highSession);
+
+        List<UUID> revokedOrder = new ArrayList<>();
+        com.realestates.backend.auth.domain.PhienXacThucRepository duplicateReturningRepo =
+                new com.realestates.backend.auth.domain.PhienXacThucRepository() {
+                    @Override
+                    public Optional<PhienXacThuc> findById(UUID id) {
+                        return basePhienRepo.findById(id);
+                    }
+
+                    @Override
+                    public Optional<PhienXacThuc> findByMaCookieBam(String maCookieBam) {
+                        return basePhienRepo.findByMaCookieBam(maCookieBam);
+                    }
+
+                    @Override
+                    public Optional<PhienXacThuc> findBySupabaseSessionId(UUID supabaseSessionId) {
+                        return basePhienRepo.findBySupabaseSessionId(supabaseSessionId);
+                    }
+
+                    @Override
+                    public List<PhienXacThuc> findByTaiKhoanId(UUID taiKhoanId) {
+                        // Giả lập kết quả trả ngược thứ tự và lặp trùng ID phiên
+                        return List.of(highSession, lowSession, highSession, lowSession);
+                    }
+
+                    @Override
+                    public PhienXacThuc save(PhienXacThuc phien) {
+                        if (phien.isDaThuHoi()) {
+                            revokedOrder.add(phien.getId());
+                        }
+                        return basePhienRepo.save(phien);
+                    }
+
+                    @Override
+                    public Optional<PhienXacThuc> replaceBrowserSessionAndSaveNew(
+                            String oldMaCookieBam,
+                            PhienXacThuc newPhien,
+                            Instant t
+                    ) {
+                        return basePhienRepo.replaceBrowserSessionAndSaveNew(oldMaCookieBam, newPhien, t);
+                    }
+
+                    @Override
+                    public Optional<PhienXacThuc> revokeByMaCookieBam(
+                            String maCookieBam,
+                            String lyDoThuHoi,
+                            Instant t,
+                            boolean giuLaiCredential
+                    ) {
+                        return basePhienRepo.revokeByMaCookieBam(maCookieBam, lyDoThuHoi, t, giuLaiCredential);
+                    }
+                };
+
+        CurrentPermissionAndCsrfService service = new CurrentPermissionAndCsrfService(
+                taiKhoanRepo,
+                duplicateReturningRepo,
+                sessionAdapter,
+                List.of("https://localhost")
+        );
+
+        TaiKhoan locked = service.khoaTaiKhoanNguyenTu(userId, now.plusSeconds(5));
+        assertThat(locked.getTrangThai()).isEqualTo(TrangThaiTaiKhoan.BI_KHOA);
+        assertThat(locked.getMocThuHoi()).isEqualTo(1L);
+        assertThat(revokedOrder).containsExactly(lowSessionId, highSessionId);
     }
 
     private static String seedAdminAndSession(

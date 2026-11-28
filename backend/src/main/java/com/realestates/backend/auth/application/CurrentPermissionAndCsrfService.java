@@ -308,6 +308,8 @@ public class CurrentPermissionAndCsrfService {
 
     /**
      * Kiểm tra quyền thực hiện thao tác nghiệp vụ (RBAC + Ownership + chặn tự khai vaiTro/trangThai/chuId từ client).
+     * Với thao tác yêu cầu đăng nhập, xác thực phiên và kiểm tra vai trò RBAC trước khi kiểm tra payload
+     * để khách hoặc người sai vai trò nhận đúng 401/403 thay vì lộ quy tắc kiểm tra trường.
      */
     public PrincipalPhienHienTai kiemTraQuyenThaoTac(
             String rawSessionCookieValue,
@@ -316,21 +318,25 @@ public class CurrentPermissionAndCsrfService {
             Map<String, ?> clientPayload
     ) {
         Objects.requireNonNull(thaoTac, "thaoTac không được null");
-        kiemTraKhongCoTruongTuKhaiBiCam(clientPayload);
 
         if (thaoTac.isChoPhepKhach()) {
+            kiemTraKhongCoTruongTuKhaiBiCam(clientPayload);
             return phanGiaiPrincipalTuyChonChoYeuCauCongKhai(rawSessionCookieValue).orElse(null);
         }
 
         PrincipalPhienHienTai principal = kiemTraPhienVaQuyenHienTai(rawSessionCookieValue);
-        kiemTraVaiTroVaChuSoHuu(principal, thaoTac, chuSoHuuTaiNguyenId);
+        kiemTraVaiTro(principal, thaoTac);
+        kiemTraKhongCoTruongTuKhaiBiCam(clientPayload);
+        if (thaoTac.isYeuCauChuSoHuuTaiNguyen()) {
+            kiemTraChuSoHuu(principal, chuSoHuuTaiNguyenId, null);
+        }
         return principal;
     }
 
     /**
      * Kiểm tra quyền thực hiện thao tác nghiệp vụ với tuỳ chọn che giấu sự tồn tại của tài nguyên riêng tư
      * (ví dụ: GET /api/listings/{listingId}/boost-quote hoặc GET /api/me/listings/{listingId} — S2-02 Bảng 1 & Bảng 2):
-     * - Kiểm tra vai trò RBAC trước (sai vai trò vẫn trả 403 KHONG_DU_QUYEN).
+     * - Kiểm tra phiên và vai trò RBAC trước khi kiểm tra payload (sai vai trò vẫn trả 403 KHONG_DU_QUYEN).
      * - Sau khi đúng vai trò, nếu tài nguyên không tồn tại (chuSoHuuTaiNguyenId == null) hoặc khác chủ sở hữu,
      *   ném ngoại lệ do {@code ngoaiLeKhiKhongPhaiChuSoHuu} cung cấp (ví dụ ListingNotFoundException -> 404 KHONG_TIM_THAY).
      */
@@ -343,14 +349,15 @@ public class CurrentPermissionAndCsrfService {
     ) {
         Objects.requireNonNull(thaoTac, "thaoTac không được null");
         Objects.requireNonNull(ngoaiLeKhiKhongPhaiChuSoHuu, "ngoaiLeKhiKhongPhaiChuSoHuu không được null");
-        kiemTraKhongCoTruongTuKhaiBiCam(clientPayload);
 
         if (thaoTac.isChoPhepKhach()) {
+            kiemTraKhongCoTruongTuKhaiBiCam(clientPayload);
             return phanGiaiPrincipalTuyChonChoYeuCauCongKhai(rawSessionCookieValue).orElse(null);
         }
 
         PrincipalPhienHienTai principal = kiemTraPhienVaQuyenHienTai(rawSessionCookieValue);
         kiemTraVaiTro(principal, thaoTac);
+        kiemTraKhongCoTruongTuKhaiBiCam(clientPayload);
         if (thaoTac.isYeuCauChuSoHuuTaiNguyen()) {
             UUID chuSoHuuId = docChuSoHuuTaiNguyen != null ? docChuSoHuuTaiNguyen.get() : null;
             if (chuSoHuuId == null || !principal.getTaiKhoanId().equals(chuSoHuuId)) {
@@ -460,14 +467,16 @@ public class CurrentPermissionAndCsrfService {
         Objects.requireNonNull(thaoTac, "thaoTac không được null");
         Objects.requireNonNull(hanhDongGhiTrongTransaction, "hanhDongGhiTrongTransaction không được null");
 
+        // Kiểm tra vòng ngoài phiên và vai trò RBAC trước khi kiểm tra allowlist/blacklist của payload
+        // để khách chưa đăng nhập (401), tài khoản bị khóa (403) hoặc sai vai trò (403) không dò được cấu trúc DTO quản trị.
+        PrincipalPhienHienTai initialPrincipal = kiemTraPhienVaQuyenHienTai(rawSessionCookieValue);
+        kiemTraVaiTro(initialPrincipal, thaoTac);
+
         if (trinhKiemTraPayload != null) {
             trinhKiemTraPayload.accept(clientPayload);
         } else {
             kiemTraKhongCoTruongTuKhaiBiCam(clientPayload);
         }
-
-        // Kiểm tra vòng ngoài trước khi vào giao dịch
-        PrincipalPhienHienTai initialPrincipal = kiemTraPhienVaQuyenHienTai(rawSessionCookieValue);
 
         List<UUID> allAccountIds = new ArrayList<>();
         allAccountIds.add(initialPrincipal.getTaiKhoanId());
@@ -568,11 +577,21 @@ public class CurrentPermissionAndCsrfService {
                         .capNhatTrangThai(TrangThaiTaiKhoan.BI_KHOA, now)
                         .tangMocThuHoi("san_sang", now);
 
-                List<PhienXacThuc> sessions = docDanhSachPhienTheoTaiKhoan(taiKhoanId).stream()
+                List<PhienXacThuc> rawSessions = docDanhSachPhienTheoTaiKhoan(taiKhoanId).stream()
+                        .filter(Objects::nonNull)
+                        .filter(s -> s.getId() != null)
                         .sorted(Comparator.comparing(PhienXacThuc::getId, MaTranQuyenSprint2.THU_TU_KHOA_UUID_POSTGRES))
                         .toList();
-                List<ReentrantLock> orderedSessionLocks = sessions.stream()
-                        .map(s -> lockForSession(s.getId()))
+                Map<UUID, PhienXacThuc> uniqueSessionsById = new LinkedHashMap<>();
+                for (PhienXacThuc s : rawSessions) {
+                    uniqueSessionsById.putIfAbsent(s.getId(), s);
+                }
+                List<UUID> orderedSessionIds = MaTranQuyenSprint2.sapXepThuTuKhoaUuid(uniqueSessionsById.keySet());
+                List<ReentrantLock> orderedSessionLocks = orderedSessionIds.stream()
+                        .map(this::lockForSession)
+                        .toList();
+                List<PhienXacThuc> sessions = orderedSessionIds.stream()
+                        .map(uniqueSessionsById::get)
                         .toList();
 
                 return withOrderedLocks(orderedSessionLocks, () -> {

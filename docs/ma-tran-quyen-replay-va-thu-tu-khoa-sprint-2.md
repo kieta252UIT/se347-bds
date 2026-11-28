@@ -100,8 +100,9 @@ Nhánh nhận task tích hợp `S2-17` (dòng 87 `Sprint_backlog.csv`) cần c�
 Để không mâu thuẫn giữa kiểm quyền, `428 THIEU_IF_MATCH`, `412 PHIEN_BAN_CU` và Replay (`AC-06.4`, `AC-11.5`), mọi endpoint ghi có `Idempotency-Key` thực thi theo **đúng 6 bước tuần tự** sau:
 
 1. **Bước 1 — Bảo vệ Origin & CSRF (Filter vòng ngoài):** Kiểm tra `Origin` thuộc whitelist và Double-Submit `X-CSRF-Token` khớp `__Host-se214_csrf` (`403 CSRF_KHONG_HOP_LE`).
-2. **Bước 2 — Kiểm tra cú pháp tĩnh của Header & Payload (trước khi ghi):**
-   - Kiểm tra trường cấm tự khai / allowlist DTO (`400 DU_LIEU_KHONG_HOP_LE`).
+2. **Bước 2 — Xác thực phiên & vai trò RBAC vòng ngoài, sau đó kiểm tra cú pháp tĩnh của Header & Payload (trước khi mở khóa ghi):**
+   - Kiểm tra sơ bộ phiên đăng nhập (`401 CHUA_DANG_NHAP`), trạng thái tài khoản (`403 TAI_KHOAN_BI_KHOA`, `403 EMAIL_CHUA_XAC_MINH`) và vai trò RBAC (`403 KHONG_DU_QUYEN`) **trước** khi kiểm tra cấu trúc DTO — ngăn khách vãng lai hoặc tài khoản khác vai trò dò danh sách trường cho phép (`allowlist`) của các API Quản trị (`POST /api/admin/accounts`, `PATCH /api/admin/accounts/{accountId}`).
+   - Sau khi qua kiểm tra quyền vòng ngoài, kiểm tra trường cấm tự khai / allowlist DTO (`400 DU_LIEU_KHONG_HOP_LE`).
    - Kiểm tra sự hiện diện và cú pháp của header `Idempotency-Key` (`btrim` khác rỗng, $\le 128$ ký tự $\rightarrow$ thiếu/rỗng trả `400 DU_LIEU_KHONG_HOP_LE`).
    - Với các endpoint bắt buộc `If-Match` (`UC-07`, `UC-08`, `UC-13`, `UC-14a`): kiểm tra **sự hiện diện** của header `If-Match` (thiếu $\rightarrow$ **`428 THIEU_IF_MATCH`**) và định dạng ETag mạnh `"{số_nguyên_không_âm}"` (sai cú pháp $\rightarrow$ `400 DU_LIEU_KHONG_HOP_LE`), nhưng **chưa so sánh giá trị ETag với DB** ở bước này và **không đưa `If-Match` vào `du_lieu_bam`**.
 3. **Bước 3 — Mở Transaction, Khóa dòng theo Bảng 4 & Kiểm lại quyền hiện tại của người gọi:**
@@ -277,7 +278,7 @@ Các migration `V2/V3` và `V4` **bắt buộc** thay thế đồng bộ các `C
 
 ### 5.2. Phần Migration `V4` (Nhánh Ví & Gói đẩy tin — nối tiếp sau `V2/V3`)
 
-1. **`se214.vi_dien_tu`:** `UNIQUE (chu_id)` (`REFERENCES se214.tai_khoan(id) ON DELETE RESTRICT`), `so_du_vnd numeric NOT NULL DEFAULT 0 CHECK (so_du_vnd >= 0 AND scale(so_du_vnd) = 0 AND so_du_vnd::text NOT IN ('NaN','Infinity','-Infinity'))` (`AC-11.5`, `Q40`). Backfill ví `0 VND` cho toàn bộ tài khoản đã có và đảm bảo đăng ký/tạo tài khoản mới đều có ví `0 VND`.
+1. **`se214.vi_dien_tu`:** khóa ngoại một-một `tai_khoan_id uuid NOT NULL UNIQUE REFERENCES se214.tai_khoan(id) ON DELETE RESTRICT` (`UNIQUE (tai_khoan_id)`, đồng bộ với thiết kế nhánh Ví & Gói `V4`), `so_du_vnd numeric NOT NULL DEFAULT 0 CHECK (so_du_vnd >= 0 AND scale(so_du_vnd) = 0 AND so_du_vnd::text NOT IN ('NaN','Infinity','-Infinity'))` (`AC-11.5`, `Q40`). Backfill ví `0 VND` cho toàn bộ tài khoản đã có và đảm bảo đăng ký/tạo tài khoản mới đều có ví `0 VND`.
 2. **`se214.giao_dich_vi` & `se214.lan_mua_goi`:**
    - `loai IN ('nap_tien','mua_goi','hoan_tien','dieu_chinh_admin')`, `trang_thai IN ('cho_thanh_toan','thanh_cong','that_bai','da_huy')`, `chieu_bien_dong IN ('cong','tru')`.
    - Ràng buộc Replay trực tiếp trên `giao_dich_vi`:
