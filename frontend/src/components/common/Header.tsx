@@ -323,7 +323,7 @@ export function Header() {
                     onClick={() => setOpenDropdown(null)}
                   >
                     <WalletMenuIcon />
-                    <span>Nạp ví</span>
+                    <span>Ví điện tử</span>
                   </Link>
 
                   <Link
