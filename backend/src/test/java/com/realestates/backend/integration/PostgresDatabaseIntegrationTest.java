@@ -29,7 +29,7 @@ class PostgresDatabaseIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("FLYWAY-01: Schema PostgreSQL 17 được khởi tạo đầy đủ 12 bảng nghiệp vụ Sprint 1")
+    @DisplayName("FLYWAY-01: Schema PostgreSQL 17 được khởi tạo đầy đủ các bảng nghiệp vụ (12 bảng Sprint 1 + 3 bảng Ví/Gói V4)")
     void flywayShouldInitializeCoreTables() {
         Integer tableCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'se214' " +
@@ -37,7 +37,7 @@ class PostgresDatabaseIntegrationTest {
                 Integer.class
         );
 
-        assertThat(tableCount).isEqualTo(12);
+        assertThat(tableCount).isEqualTo(15);
     }
 
     @Test
